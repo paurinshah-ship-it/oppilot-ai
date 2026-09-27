@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{font:14px system-ui;color:#352d4b;margin:0}section{border:1px solid #d9d0eb;border-radius:12px;padding:16px;background:#faf8ff}button{padding:10px 16px;border:0;border-radius:8px;cursor:pointer;margin:4px;background:#7563b5;color:white}button:disabled{opacity:.45;cursor:default}p{margin:9px 0;line-height:1.5}small{color:#655f76}#status{font-weight:600}label{display:block;margin-top:10px}</style></head><body>
+<section><strong>Continuous voice · local processing</strong>
+<p><button id="start" disabled>Start voice</button><button id="stop" disabled>Stop voice</button><button id="interrupt" disabled>Interrupt answer</button></p>
+<p id="status" role="status" aria-live="polite">Initializing…</p>
+<small>Speak, pause, and hear the answer. Speak again to interrupt. Use headphones to avoid speaker echo. English only. No PHI.</small>
+<label>Microphone sensitivity <input id="sensitivity" type="range" min="5" max="60" value="18" aria-label="Microphone sensitivity threshold"></label>
+<p id="transcript"></p><p id="answer"></p></section>
+<script src="voice.js"></script></body></html>

@@ -55,14 +55,3 @@ git push origin main
 
 echo ""
 echo "======================================"
-echo "✅ DEPLOYMENT COMPLETE"
-echo "GitHub has been updated."
-echo "Streamlit Cloud can now redeploy main."
-echo "======================================"
-
-Changes waiting to be deployed:
- M app.py
- M src/analytics.py
- M tests/test_app.py
-
-Deploy these changes? (y/n):

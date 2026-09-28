@@ -6,10 +6,8 @@ echo "======================================"
 echo " Provider Performance Copilot Deploy"
 echo "======================================"
 
-# Make sure we are in the project directory
 cd "$(dirname "$0")"
 
-# Get commit message
 MESSAGE="${1:-Update Provider Performance Copilot}"
 
 echo ""
@@ -28,7 +26,20 @@ if [ -z "$(git status --porcelain)" ]; then
 fi
 
 echo ""
+echo "Changes waiting to be deployed:"
+echo "--------------------------------------"
 git status --short
+echo "--------------------------------------"
+
+echo ""
+read -p "Deploy these changes? (y/n): " CONFIRM
+
+if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    echo ""
+    echo "❌ Deployment cancelled."
+    echo "Nothing was committed or pushed."
+    exit 0
+fi
 
 echo ""
 echo "3. Staging changes..."
@@ -48,3 +59,10 @@ echo "✅ DEPLOYMENT COMPLETE"
 echo "GitHub has been updated."
 echo "Streamlit Cloud can now redeploy main."
 echo "======================================"
+
+Changes waiting to be deployed:
+ M app.py
+ M src/analytics.py
+ M tests/test_app.py
+
+Deploy these changes? (y/n):

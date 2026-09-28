@@ -27,6 +27,8 @@ def test_app_and_empty_filters():
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run(timeout=30)
     assert not app.exception
     assert len(app.metric) == 7
+    assert next(w for w in app.selectbox if w.label == "Reporting period").value == "Latest calendar year"
+    assert [tab.label for tab in app.tabs][:2] == ["Overview", "Ask copilot"]
     next(w for w in app.multiselect if w.label == "Select specialties").set_value([]).run()
     assert not app.exception
     assert any("No data" in message.value for message in app.info)
@@ -119,7 +121,8 @@ def test_provider_selection_updates_cards_and_comparisons():
     from src.data import load_data
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run()
     next(w for w in app.multiselect if w.label == "Select providers").set_value(["Dr. Maya Patel"]).run()
-    expected = load_data().query("provider == 'Dr. Maya Patel'").visits.sum()
+    df = load_data()
+    expected = df[(df.provider == "Dr. Maya Patel") & (df.date.dt.year == df.date.dt.year.max())].visits.sum()
     assert app.metric[0].value == f"{expected:,}"
     assert len(app.get("plotly_chart")) == 6
     assert not app.exception

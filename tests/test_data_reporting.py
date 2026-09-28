@@ -75,7 +75,7 @@ def test_uploaded_app_and_restore():
     app.run()
     assert not app.exception
     assert any('Cloud executive briefs are disabled' in i.value for i in app.info)
-    assert next(w for w in app.selectbox if w.label=='Reporting period').value=='All available data'
+    assert next(w for w in app.selectbox if w.label=='Reporting period').value=='Latest calendar year'
     assert next(w for w in app.multiselect if w.label=='Select providers').value==['Dr. Demo Example']
     next(b for b in app.button if b.label=='Generate Performance Report').click().run()
     assert not app.exception
@@ -84,7 +84,7 @@ def test_uploaded_app_and_restore():
     assert any('Generate a fresh report' in i.value for i in app.info)
     next(b for b in app.button if b.label=='Restore synthetic demo').click().run()
     assert not app.exception
-    assert next(w for w in app.selectbox if w.label=='Reporting period').value=='All five years'
+    assert next(w for w in app.selectbox if w.label=='Reporting period').value=='Latest calendar year'
 
 
 def test_report_unknown_rates_and_escaped_labels():

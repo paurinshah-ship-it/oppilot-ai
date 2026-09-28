@@ -13,7 +13,6 @@ from src.scenarios_ui import render_scenarios
 from src.scenarios import SCENARIO_QUESTIONS
 from src.data_reporting_ui import render_data_controls, render_reporting
 from src.semantic_metrics import catalog_records
-from src.answerability import QUESTION_CATALOG
 from src.query_explanation import explain_plan
 from src.semantic_query import EXAMPLES as SEMANTIC_QUESTIONS
 import hashlib
@@ -35,13 +34,12 @@ except (OSError, ValueError, pd.errors.ParserError) as exc:
 if 'uploaded_data' in st.session_state:
     df = st.session_state.uploaded_data
 header()
-render_data_controls()
 revision = st.session_state.get('dataset_revision', 0)
 content, controls = st.columns([3.6, 1.45], gap="large")
 with controls, st.container(border=True):
     st.subheader("Filters")
     st.caption("1 · Choose dates  2 · Narrow the team  3 · Set a target")
-    period = st.selectbox("Reporting period", ["All available data" if "uploaded_data" in st.session_state else "All five years", "Latest calendar year", "Latest two calendar years", "Custom dates"])
+    period = st.selectbox("Reporting period", ["All available data" if "uploaded_data" in st.session_state else "All five years", "Latest calendar year", "Latest two calendar years", "Custom dates"], index=1)
     range_end = df.date.max().date()
     range_start = df.date.min().date()
     if period == "Latest calendar year":
@@ -67,6 +65,9 @@ with controls, st.container(border=True):
     target = st.slider("Target utilization (%)", 50, 100, 85, help="A scenario assumption, not a clinical or industry standard.") / 100
     st.caption(f"Available period: {df.date.min():%b %d, %Y} – {df.date.max():%b %d, %Y}. Coverage reflects observed rows, not a staffing roster.")
 
+with controls:
+    render_data_controls()
+
 with content:
     if not isinstance(dates, (tuple, list)) or len(dates) != 2:
         st.info("Select both a start and end date.")
@@ -85,13 +86,14 @@ with content:
     for col, label, value in zip(columns, ["Completed visits", "Capacity", "Utilization", "Revenue"],
                                  [f"{visits:,}", f"{capacity:,}", f"{kpis['utilization']:.1%}", (f"${revenue / 1_000_000:,.2f}M" if revenue >= 1_000_000 else f"${revenue:,.0f}")]):
         col.metric(label, value, help=f"Exact reported revenue: ${revenue:,.2f}" if label == "Revenue" else None)
-    columns = st.columns(3)
-    columns[0].metric("Unused capacity", f"{kpis['unused_capacity']:,} slots")
-    columns[1].metric("Visits / staffed hour", f"{kpis['productivity']:.2f}")
-    columns[2].metric("Revenue opportunity", f"${p.opportunity.sum():,.0f}")
+    with st.container(key="overview_operational_kpis"):
+        columns = st.columns(3)
+        columns[0].metric("Unused capacity", f"{kpis['unused_capacity']:,} slots")
+        columns[1].metric("Visits / staffed hour", f"{kpis['productivity']:.2f}")
+        columns[2].metric("Revenue opportunity", f"${p.opportunity.sum():,.0f}")
     st.caption(f"{p.provider_id.nunique()} providers · {dates[0]:%b %d, %Y} – {dates[1]:%b %d, %Y} · Opportunity modeled at {target:.0%} utilization")
 
-    overview, benchmarks, opportunities, workspace, scenarios, executive, copilot, reporting = st.tabs(["Overview", "Compare", "Opportunities", "Executive workspace", "Scenarios", "Executive brief", "Ask copilot", "Data & Reporting"])
+    overview, copilot, benchmarks, opportunities, workspace, scenarios, executive, reporting = st.tabs(["Overview", "Ask copilot", "Compare", "Opportunities", "Executive workspace", "Scenarios", "Executive brief", "Data & Reporting"])
     with overview:
         monthly = monthly_performance(filtered)
         left, right = st.columns(2)
@@ -202,13 +204,6 @@ with content:
             st.caption("A deterministic parser creates an allowlisted metric/dimension/date plan. Specialized comparisons, trends and scenarios retain their existing routes.")
             for example in SEMANTIC_QUESTIONS:
                 st.code(example, language=None)
-        with st.expander("Supported questions — choose one"):
-            st.caption("This copilot supports provider operations analytics, not every general question. Unsupported requests receive an explanation and relevant alternatives. Questions below use your selected scope.")
-            for category, prompts in QUESTION_CATALOG.items():
-                st.markdown(f"**{category}**")
-                for prompt in prompts:
-                    if st.button(prompt, key="catalog_" + prompt):
-                        st.session_state.pending_follow_up = prompt
         chat_scope = hashlib.sha256((filtered.to_csv(index=False) + str(target)).encode()).hexdigest()
         if st.session_state.get("chat_scope") != chat_scope:
             had_chat = bool(st.session_state.get("chat_history"))
@@ -270,11 +265,6 @@ with content:
                     if message.get("chart") is not None:
                         st.plotly_chart(message["chart"], width="stretch", key=f"chat_chart_{display_index}")
                     st.caption(message.get("grounding", "Grounding: no metrics calculated") + " · " + message["status"])
-                    if display_index == 1 and message.get("status") != "answered":
-                        for alternative in message.get("suggested_questions", []):
-                            if st.button(alternative, key="alternative_" + alternative):
-                                st.session_state.pending_follow_up = alternative
-                                st.rerun()
                     if display_index == 1:
                         follow_columns = st.columns(3)
                         for index, item in enumerate(message.get("follow_ups", [])):

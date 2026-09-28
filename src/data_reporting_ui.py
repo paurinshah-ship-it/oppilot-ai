@@ -23,11 +23,10 @@ def render_data_controls():
                 mapping = {}
                 with st.form('csv_mapping_'+digest):
                     st.caption('Confirm each mapping. Ambiguous aliases are left unselected. Unknown columns will be discarded.')
-                    cols = st.columns(3)
-                    for i, field in enumerate(COLUMNS):
+                    for field in COLUMNS:
                         options = ['Not mapped'] + list(raw.columns)
                         selected = suggestions[field] or 'Not mapped'
-                        mapping[field] = cols[i%3].selectbox(field,options,index=options.index(selected),key='mapping_'+digest+field)
+                        mapping[field] = st.selectbox(field,options,index=options.index(selected),key='mapping_'+digest+field)
                         if mapping[field] == 'Not mapped':
                             mapping[field] = None
                     confirmed = st.checkbox('I confirm this is synthetic or verified non-PHI aggregate data and these field meanings match the mapping.',key='confirm_'+digest)

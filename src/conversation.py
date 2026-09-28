@@ -14,7 +14,6 @@ from src.semantic_query import semantic_response, EXAMPLES as SEMANTIC_QUESTIONS
 from src.query_planner import planner_response
 from src.investigations import investigation_response
 from src.analytical_memory import attach_state, scope_key
-from src.answerability import finish_answer
 from src.deep_analysis import DEEP_QUESTIONS, deep_answer, period_comparison
 from src.analytics import benchmark, calculate_kpis, detect_opportunities
 from src.comparative import (handle_comparison, grounding_record, grounding_text,
@@ -268,6 +267,5 @@ def respond(question, df, target=.85, history=None, as_of=None, raw_df=None, dat
             {'label': 'Estimate revenue impact', 'question': 'Estimate revenue impact'},
             {'label': 'Show provider trend', 'question': 'Show provider trend'},
         ]
-    response = finish_answer(response, question, df, lambda candidate: _respond(candidate, df, target, None, as_of, raw_df, data_bounds))
     attach_state(response, scope_key(df, df if raw_df is None else raw_df, target))
     return response

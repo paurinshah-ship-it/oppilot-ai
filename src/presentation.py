@@ -49,4 +49,4 @@ def header():
       <p>Understand performance. Compare providers. Prioritize opportunities.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.caption("UPLOADED AGGREGATES · User confirmed non-PHI · Local analytics" if "uploaded_data" in st.session_state else "SYNTHETIC DEMO · Fictional providers · No patient data or PHI")
+    st.caption("UPLOADED AGGREGATES · User confirmed non-PHI · Local analytics" if "uploaded_data" in st.session_state else "SYNTHETIC DEMO · Portfolio Project · Fictional providers · No patient data or PHI")

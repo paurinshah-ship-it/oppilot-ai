@@ -6,6 +6,12 @@ Provider Performance Copilot helps practice managers and healthcare leaders iden
 
 > **Live Demo:** https://paurinshah-ship-it-provider-performance-copilot-app-ebiivb.streamlit.app/
 
+## Product Preview
+
+![Provider Performance Copilot Executive Overview](docs/screenshots/provider-performance-overview.png)
+
+*Executive overview showing provider capacity, utilization, visits, revenue trends, and modeled revenue opportunity.*
+
 ## Why I Built This
 
 Ambulatory healthcare organizations generate large amounts of operational data, but turning that data into actionable decisions can be difficult.

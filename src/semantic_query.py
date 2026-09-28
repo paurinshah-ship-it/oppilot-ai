@@ -8,16 +8,24 @@ import pandas as pd
 from src.semantic_metrics import METRICS, execute_metrics, format_metric
 from src.date_ranges import parse_date_range, format_range
 from src.comparative import reply, grounding_record, resolve_providers, dated_rows
+from src.charts import monthly_no_show_by_specialty_chart
+from src.postgres_analytics import (PostgresRepository, postgres_configured,
+                                    request_from_semantic_plan)
 
 EXAMPLES = ['Show completed visits and utilization by clinic in 2025',
-            'Show no-show rate by specialty and month in July 2025',
+            'Show monthly no-show trends by specialty',
             'Show revenue opportunity by provider during the available period']
 
 
 def interpret_query(question, today, bounds, roster):
     q = question.lower().strip().rstrip('.?! ')
-    # Established trend, causal, scenario, chart and follow-up handlers retain ownership.
-    if re.search(r'\b(why|trend|improving|decreased|increased|dropped|chart|plot|forecast|predict)\b|what.if|compare with', q):
+    # Established causal, scenario, forecast, and follow-up handlers retain
+    # ownership. A narrow, allowlisted monthly specialty no-show chart is
+    # intentionally planned here rather than accepting arbitrary chart code.
+    chart_words = bool(re.search(r'\b(chart|plot|trend|trends)\b', q))
+    chart_candidate = bool(re.search(r'no[- ]show', q) and re.search(r'specialt(?:y|ies)', q)
+                           and re.search(r'\b(month|monthly|months)\b', q))
+    if re.search(r'\b(why|improving|decreased|increased|dropped|forecast|predict)\b|what.if|compare with', q) or (chart_words and not chart_candidate):
         return None
     # These forms select the compositional route; existing conversational intents remain compatible.
     if not (re.search(r'\bby\b',q) or q.startswith(('show ', 'total ', 'calculate ')) or any(k in q for k in METRICS if '_' in k)):
@@ -39,18 +47,25 @@ def interpret_query(question, today, bounds, roster):
         residual = re.sub(r'\b'+re.escape(name.lower())+r'\b',' ',residual)
         residual = re.sub(r'\b(?:dr\.?|doctor)\s+'+re.escape(name.split()[-1].lower())+r'\b',' ',residual)
     dimensions = []
-    for key,pattern in [('provider',r'\bproviders?\b'),('clinic',r'\bclinics?\b'),('specialty',r'\bspecialt(?:y|ies)\b'),('month',r'\bmonths?\b')]:
+    for key,pattern in [('provider',r'\bproviders?\b'),('clinic',r'\bclinics?\b'),('specialty',r'\bspecialt(?:y|ies)\b'),('month',r'\b(?:months?|monthly)\b')]:
         if re.search(pattern,residual):
             dimensions.append(key)
             residual = re.sub(pattern,' ',residual)
     order = 'desc' if re.search(r'\b(highest|most|largest|descending)\b',residual) else 'asc' if re.search(r'\b(lowest|least|ascending)\b',residual) else None
-    residual = re.sub(r'\b(show|me|the|our|total|calculate|what|is|are|and|by|for|in|during|period|available|across|per|compare|which|has|have|with|highest|most|largest|lowest|least|ascending|descending|order|rank)\b|[, &]', ' ',residual)
+    residual = re.sub(r'\b(show|me|the|our|total|calculate|what|is|are|and|by|for|in|during|period|available|across|per|compare|which|has|have|with|highest|most|largest|lowest|least|ascending|descending|order|rank|trend|trends|chart|plot)\b|[, &]', ' ',residual)
     if error or residual.strip():
         error = error or 'I could not resolve all requested filters or qualifiers. Use catalog metrics with provider, clinic, specialty or month dimensions.'
     if order and len(metrics)>1:
         error = 'Ranking multiple metrics is ambiguous. Ask to rank one metric or omit the ranking.'
+    chart_spec = None
+    if chart_candidate:
+        if metrics == ['no_show_rate'] and set(dimensions) == {'specialty', 'month'} and not names and not order:
+            chart_spec = {'type': 'line', 'x': 'month', 'y': 'no_show_rate', 'series': 'specialty',
+                          'aggregation': 'weighted monthly ratio'}
+        else:
+            error = error or 'Monthly specialty trend charts support only no-show rate grouped by specialty and month.'
     return dict(metrics=metrics, dimensions=dimensions, providers=names, date_range=parsed,
-                order=order, error=error)
+                order=order, chart_spec=chart_spec, error=error)
 
 
 def semantic_response(q, df, source, target, today, bounds):
@@ -76,7 +91,31 @@ def semantic_response(q, df, source, target, today, bounds):
     unavailable=[k for k in plan['metrics'] if not METRICS[k].available or any(c not in rows for c in METRICS[k].columns)]
     if unavailable:
         return finish('Not measured: '+', '.join(METRICS[k].label for k in unavailable)+'. Revenue cannot be substituted for collections. No figures were invented.','unavailable')
-    result=execute_metrics(rows,plan['metrics'],plan['dimensions'],target)
+    # PostgreSQL executes the semantic request when configured. The question
+    # supplies only catalog terms; this code supplies the scoped provider IDs
+    # and sends a parameterized request to the repository. CSV demonstrations
+    # retain the deterministic Pandas executor used by the existing UI.
+    if postgres_configured():
+        scoped = source
+        if plan['providers']:
+            scoped = scoped[scoped.provider.isin(plan['providers'])]
+        provider_ids = scoped.provider_id.astype(str).tolist()
+        repository = PostgresRepository()
+        metric_results = []
+        for metric in plan['metrics']:
+            sql_request = request_from_semantic_plan(
+                plan, metric, target_utilization=target, provider_ids=provider_ids,
+                fallback_start=rows.date.min().date(), fallback_end=rows.date.max().date(),
+            )
+            metric_results.append(repository.execute(sql_request))
+        result = metric_results[0]
+        dimension_columns = [column for column in result.columns if column != plan['metrics'][0]]
+        for metric, metric_result in zip(plan['metrics'][1:], metric_results[1:]):
+            result = result.merge(metric_result, on=dimension_columns, how='outer', validate='one_to_one')
+        plan['execution'] = 'PostgreSQL parameterized analytics SQL'
+    else:
+        result=execute_metrics(rows,plan['metrics'],plan['dimensions'],target)
+        plan['execution'] = 'Pandas aggregate analytics (local demo fallback)'
     if plan['order']:
         result=result.sort_values(plan['metrics'][0],ascending=plan['order']=='asc',na_position='last',kind='stable')
     display=result.drop(columns=['provider_id'],errors='ignore').copy()
@@ -100,4 +139,14 @@ def semantic_response(q, df, source, target, today, bounds):
         response['context'] = dict(providers=names, metric=plan['metrics'][0], start=start, end=end)
         response['provider'] = names[0] if len(names) == 1 else None
     response['semantic_data']=result.to_dict('records')
+    if plan['chart_spec']:
+        response['chart'] = monthly_no_show_by_specialty_chart(result)
+        response['text'] = (
+            'Monthly no-show rate by specialty. Each point is calculated as '
+            'sum(no-shows) ÷ sum(booked appointments) for that specialty and month.\n\n'
+            f'Chart plan: line chart · monthly aggregation · {result.specialty.nunique()} specialties · '
+            f'{len(result):,} specialty-month groups.\n\n'
+            'The “Why did the copilot give this answer?” panel contains the executed plan, date range, '
+            'and source-row provenance.'
+        )
     return response

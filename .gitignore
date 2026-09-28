@@ -8,3 +8,4 @@ __pycache__/
 !.env.example
 .models/
 tmp/
+data/synthetic_appointments_*.csv

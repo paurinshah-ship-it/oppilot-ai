@@ -18,6 +18,7 @@ from src.deep_analysis import DEEP_QUESTIONS, deep_answer, period_comparison
 from src.analytics import benchmark, calculate_kpis, detect_opportunities
 from src.comparative import (handle_comparison, grounding_record, grounding_text,
                              metric_from_question, context_for, dated_rows)
+from src.copilot_audit import calculation_path
 
 SUGGESTIONS = [
     'Which providers have the most unused capacity?',
@@ -35,6 +36,51 @@ COMPARISON_QUESTIONS = [
     'Which no-show rates increased in August 2025?',
     'What is our utilization year to date?',
 ]
+
+
+def metric_breakdown(df, metric, start, end):
+    """Return exact operands for an allowlisted metric provenance response.
+
+    All values are recomputed from the current provider-day rows. This is an
+    explanation of arithmetic, not a reconstruction by an AI model.
+    """
+    values = {
+        'completed_visits': int(df.visits.sum()), 'available_slots': int(df.capacity.sum()),
+        'booked_appointments': int(df.booked.sum()), 'no_shows': int(df.no_shows.sum()),
+        'revenue': float(df.revenue.sum()), 'staffed_hours': float(df.staffed_hours.sum()),
+        'rows_analyzed': len(df), 'date_range': format_range(start, end),
+    }
+    if metric == 'utilization':
+        value = values['completed_visits'] / values['available_slots'] if values['available_slots'] else None
+        values.update({
+            'metric': 'Utilization', 'value': value,
+            'formula': 'Completed visits / available slots',
+            'arithmetic': (f"{values['completed_visits']:,} / {values['available_slots']:,} = {value:.1%}"
+                           if value is not None else 'Unavailable: available slots are zero'),
+        })
+    elif metric == 'no_show_rate':
+        value = values['no_shows'] / values['booked_appointments'] if values['booked_appointments'] else None
+        values.update({
+            'metric': 'No-show rate', 'value': value,
+            'formula': 'No-shows / booked appointments',
+            'arithmetic': (f"{values['no_shows']:,} / {values['booked_appointments']:,} = {value:.1%}"
+                           if value is not None else 'Unavailable: booked appointments are zero'),
+        })
+    elif metric == 'productivity':
+        value = values['completed_visits'] / values['staffed_hours'] if values['staffed_hours'] else None
+        values.update({
+            'metric': 'Visits / staffed hour', 'value': value,
+            'formula': 'Completed visits / staffed hours',
+            'arithmetic': (f"{values['completed_visits']:,} / {values['staffed_hours']:,.1f} = {value:.2f}"
+                           if value is not None else 'Unavailable: staffed hours are zero'),
+        })
+    else:
+        values.update({
+            'metric': 'Completed visits', 'value': values['completed_visits'],
+            'formula': 'Sum of completed visits across provider-day rows',
+            'arithmetic': f"sum(visits) = {values['completed_visits']:,}",
+        })
+    return values
 
 
 def _respond(question, df, target=.85, history=None, as_of=None, raw_df=None, data_bounds=None):
@@ -164,6 +210,37 @@ def _respond(question, df, target=.85, history=None, as_of=None, raw_df=None, da
             or re.fullmatch(r'compare (?:all )?providers,? clinics,? and specialties', q)):
         return result(scope + '\n\n' + period_comparison(df, target))
     causal = bool(re.search(r'\bwhy\b|cause|reason', q))
+    explanation_request = bool(re.search(r'where (?:did|does)|came from|how (?:was|is|did).*calculat|show (?:the )?calculation|formula', q))
+    if explanation_request:
+        previous = next((message.get('context') for message in reversed(history or [])
+                         if message.get('role') == 'assistant' and message.get('context')), None)
+        metric = metric_from_question(q)
+        if not re.search(r'utilization|no[- ]show|productiv|visit', q) and previous:
+            metric = previous.get('metric', metric)
+        metric = {'visits': 'completed_visits'}.get(metric, metric)
+        if metric not in ('utilization', 'no_show_rate', 'productivity', 'completed_visits'):
+            return result('I can show arithmetic provenance for utilization, no-show rate, productivity, or completed visits. Ask, for example, “Where did utilization come from?”', 'limited')
+        breakdown = metric_breakdown(df, metric, *effective)
+        value = ('Unavailable' if breakdown['value'] is None else
+                 f"{breakdown['value']:.1%}" if metric in ('utilization', 'no_show_rate') else
+                 f"{breakdown['value']:.2f}" if metric == 'productivity' else f"{breakdown['value']:,}")
+        operands = (f"Completed: {breakdown['completed_visits']:,}\n\nAvailable: {breakdown['available_slots']:,}"
+                    if metric == 'utilization' else
+                    f"No-shows: {breakdown['no_shows']:,}\n\nBooked: {breakdown['booked_appointments']:,}"
+                    if metric == 'no_show_rate' else
+                    f"Completed: {breakdown['completed_visits']:,}\n\nStaffed hours: {breakdown['staffed_hours']:,.1f}"
+                    if metric == 'productivity' else
+                    f"Completed visits across the selected provider-day rows: {breakdown['completed_visits']:,}")
+        text = (f"**{breakdown['metric']}: {value}**\n\n"
+                f"**Formula:** {breakdown['formula']}\n\n"
+                f"{operands}\n\n"
+                f"**Calculation:** {breakdown['arithmetic']}\n\n"
+                f"**Date range:** {breakdown['date_range']}\n\n"
+                f"**Rows analyzed:** {breakdown['rows_analyzed']:,}")
+        provenance = result(text, 'answered', provider)
+        provenance['calculation_breakdown'] = breakdown
+        provenance['context'] = context_for([provider] if provider else [], metric, *effective)
+        return provenance
     if causal and not provider:
         return result('This dataset cannot establish causes. Specify a provider to inspect utilization, unbooked slots, and no-shows; demand and visit complexity are not measured.', 'refused')
     if provider:
@@ -174,7 +251,15 @@ def _respond(question, df, target=.85, history=None, as_of=None, raw_df=None, da
                 f'{row.visits_per_hour:.2f} visits/staffed hour; ${row.revenue:,.0f} revenue. '
                 f'Unused capacity: {row.unused_capacity:,.0f} = {row.unbooked_slots:,.0f} unbooked + {row.no_shows:,.0f} no-shows. '
                 f'Selected specialty utilization: {row.peer_utilization:.1%} (includes self, {row.peer_count} providers); '
-                f'gap: {row.utilization_gap_pp:+.1f} percentage points. '
+                f'weighted gap: {row.utilization_gap_pp:+.1f} percentage points.\n\n'
+                f'**Utilization context — provider-level medians within the selected team, including this provider**\n'
+                f'- Specialty ({row.specialty}): {row.specialty_median_utilization:.1%} median across {row.specialty_median_count} providers; '
+                f'difference: {row.specialty_median_gap_pp:+.1f} percentage points.\n'
+                f'- Practice ({row.clinic}): {row.practice_median_utilization:.1%} median across {row.practice_median_count} providers; '
+                f'difference: {row.practice_median_gap_pp:+.1f} percentage points.\n'
+                f'- Organization: {row.organization_median_utilization:.1%} median across {row.organization_median_count} selected providers; '
+                f'difference: {row.organization_median_gap_pp:+.1f} percentage points.\n\n'
+                f'These medians provide context, not a performance rank. '
                 f'Modeled opportunity: ${row.opportunity:,.0f} at {target:.0%} utilization. ')
         if not row.revenue_rate_known:
             text += 'Revenue opportunity is unknown without observed revenue per visit; zero is only a placeholder. '
@@ -268,4 +353,7 @@ def respond(question, df, target=.85, history=None, as_of=None, raw_df=None, dat
             {'label': 'Show provider trend', 'question': 'Show provider trend'},
         ]
     attach_state(response, scope_key(df, df if raw_df is None else raw_df, target))
+    # The path is deterministic metadata for auditing and UI transparency; it
+    # never asks a model to reconstruct or explain numeric calculations.
+    response['calculation_path'] = calculation_path(response)
     return response

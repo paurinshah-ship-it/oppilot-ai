@@ -76,3 +76,19 @@ def test_dimensions_ranking_and_alias_priority():
     answer=respond('Show completed_visits for Dr. Alpha',rows())
     assert answer['status']=='answered'
     assert answer['semantic_data'][0]['completed_visits']==17
+
+
+def test_monthly_specialty_no_show_chart_uses_allowlisted_plan():
+    df = rows().copy()
+    df.loc[df.index[2], 'specialty'] = 'Surgery'
+    question = 'Show monthly no-show trends by specialty'
+    plan = interpret_query(question, date(2025, 8, 31),
+                           (date(2025, 7, 1), date(2025, 8, 31)), list(df.provider.unique()))
+    assert plan['metrics'] == ['no_show_rate']
+    assert plan['dimensions'] == ['specialty', 'month']
+    assert plan['chart_spec'] == {'type': 'line', 'x': 'month', 'y': 'no_show_rate',
+                                  'series': 'specialty', 'aggregation': 'weighted monthly ratio'}
+    reply = respond(question, df, as_of=date(2025, 8, 31))
+    assert reply['status'] == 'answered'
+    assert reply['chart'] is not None
+    assert reply['query_plan']['chart_spec']['type'] == 'line'

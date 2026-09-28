@@ -21,6 +21,30 @@ def test_filter_scope_and_missing_data():
     assert 'self-comparison' in respond('Dr. Maya Patel utilization?', subset)['text']
 
 
+def test_provider_answer_includes_specialty_practice_and_organization_context():
+    df = load_data()
+    response = respond('Compare Dr. Maya Patel utilization with specialty, practice, and organization', df)
+    assert response['status'] == 'answered'
+    assert 'Utilization context' in response['text']
+    assert 'Specialty (' in response['text']
+    assert 'Practice (' in response['text']
+    assert 'Organization:' in response['text']
+    assert 'not a performance rank' in response['text']
+
+
+def test_utilization_provenance_shows_operands_dates_and_rows():
+    df = load_data()
+    response = respond('Where did utilization come from?', df)
+    expected_visits = int(df.visits.sum())
+    expected_capacity = int(df.capacity.sum())
+    assert response['status'] == 'answered'
+    assert f'Completed: {expected_visits:,}' in response['text']
+    assert f'Available: {expected_capacity:,}' in response['text']
+    assert f'{expected_visits:,} / {expected_capacity:,}' in response['text']
+    assert f'Rows analyzed:** {len(df):,}' in response['text']
+    assert response['calculation_breakdown']['metric'] == 'Utilization'
+
+
 def test_chat_history_suggestions_clear_and_filters():
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / 'app.py', default_timeout=30).run()
     next(b for b in app.button if b.label == 'Where is our largest revenue opportunity?').click().run()

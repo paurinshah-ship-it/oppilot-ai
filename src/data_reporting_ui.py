@@ -2,7 +2,9 @@
 import hashlib
 import pandas as pd
 import streamlit as st
-from src.data_reporting import COLUMNS, read_upload, suggest_mapping, project_columns, quality_checks, activate_upload
+from src.data_reporting import (COLUMNS, FIELD_LABELS, read_upload, mapping_suggestions,
+                                project_columns, quality_checks, activate_upload, schema_profile,
+                                schema_change)
 from src.reporting import performance_report
 
 
@@ -11,7 +13,7 @@ def render_data_controls():
         uploaded = 'uploaded_data' in st.session_state
         st.caption('Active: ' + ('uploaded aggregate CSV (local only)' if uploaded else 'built-in synthetic demo'))
         st.info('Upload only synthetic or verified non-PHI provider-day aggregates. No patient rows, identifiers, clinical notes or free text. Uploads stay in this local app session; cloud AI briefs are disabled for uploaded data.')
-        st.caption('Required date format: YYYY-MM-DD. Revenue must mean realized revenue, not collections or charges. Cancellations cannot replace no-shows. Missing measures are not inferred. Only mapped columns are retained.')
+        st.caption('Required date format: YYYY-MM-DD. Map a financial field only when it represents realized revenue or collections, not charges. Cancellations cannot replace no-shows. Missing measures are not inferred. Only mapped columns are retained.')
         st.download_button('Download CSV template', ','.join(COLUMNS)+'\n', 'provider_day_template.csv', 'text/csv')
         file = st.file_uploader('Upload provider-day CSV', type=['csv'])
         if file is not None:
@@ -19,14 +21,27 @@ def render_data_controls():
             digest = hashlib.sha256(payload).hexdigest()[:16]
             try:
                 raw = read_upload(payload)
-                suggestions = suggest_mapping(raw.columns)
+                profile = schema_profile(raw)
+                change = schema_change(st.session_state.get('last_upload_schema'), profile)
+                if change:
+                    st.warning(change)
+                suggestions = mapping_suggestions(raw.columns)
                 mapping = {}
+                recognized = [item for item in suggestions.values() if item['source_column']]
+                if recognized:
+                    st.markdown('**I think these columns map to your operational dataset. Please confirm or change them.**')
+                    st.dataframe(pd.DataFrame([{
+                        'Your column': item['source_column'], 'Suggested field': item['target_label'],
+                        'Recognition': item['confidence'],
+                    } for item in recognized]), hide_index=True, width='stretch')
+                else:
+                    st.warning('I could not confidently recognize any required columns. Select each source column manually below.')
                 with st.form('csv_mapping_'+digest):
-                    st.caption('Confirm each mapping. Ambiguous aliases are left unselected. Unknown columns will be discarded.')
+                    st.caption('Confirm every mapping. Ambiguous names are left unselected. Unknown columns are discarded; this app never guesses missing measures.')
                     for field in COLUMNS:
                         options = ['Not mapped'] + list(raw.columns)
-                        selected = suggestions[field] or 'Not mapped'
-                        mapping[field] = st.selectbox(field,options,index=options.index(selected),key='mapping_'+digest+field)
+                        selected = suggestions[field]['source_column'] or 'Not mapped'
+                        mapping[field] = st.selectbox(FIELD_LABELS[field], options, index=options.index(selected), key='mapping_'+digest+field)
                         if mapping[field] == 'Not mapped':
                             mapping[field] = None
                     confirmed = st.checkbox('I confirm this is synthetic or verified non-PHI aggregate data and these field meanings match the mapping.',key='confirm_'+digest)
@@ -36,6 +51,7 @@ def render_data_controls():
                     checks = quality_checks(candidate)
                     st.dataframe(checks, hide_index=True, width='stretch')
                     activate_upload(st.session_state,raw,mapping,confirmed)
+                    st.session_state['last_upload_schema'] = profile
                     st.rerun()
             except (ValueError, KeyError, UnicodeError, pd.errors.ParserError) as exc:
                 st.error(f'Upload not activated: {exc}. The active dataset is unchanged.')

@@ -1,9 +1,11 @@
 import pandas as pd
 import streamlit as st
-from src.data import DATA_PATH, load_data
+from src.data import DATA_PATH, validate_data
+from src.postgres_analytics import load_dashboard_data, postgres_configured
 from src.analytics import benchmark, answer, calculate_kpis, monthly_performance, detect_opportunities
 from src.charts import (visits_chart, revenue_chart, utilization_chart,
-                        productivity_chart, provider_revenue_chart, utilization_trend_chart)
+                        productivity_chart, provider_revenue_chart, utilization_trend_chart,
+                        opportunity_concentration_chart)
 from src.presentation import apply_style, header
 from src.forecasting_ui import render_forecasting
 from src.insights import executive_insights
@@ -13,10 +15,13 @@ from src.workspace_ui import render_workspace
 from src.scenarios_ui import render_scenarios
 from src.scenarios import SCENARIO_QUESTIONS
 from src.data_reporting_ui import render_data_controls, render_reporting
+from src.access_control import demo_profiles, scope_data, scope_description
+from src.copilot_audit import record_query, render_calculation_path, render_audit_trail
 from src.semantic_metrics import catalog_records
 from src.query_explanation import explain_plan
 from src.semantic_query import EXAMPLES as SEMANTIC_QUESTIONS
 import hashlib
+import html
 from ai_copilot import build_context, context_key, configuration_ready, generate_brief, CopilotError
 
 st.set_page_config(page_title="Provider Performance Copilot", page_icon="📊", layout="wide")
@@ -24,20 +29,49 @@ st.set_page_config(page_title="Provider Performance Copilot", page_icon="📊", 
 apply_style()
 
 @st.cache_data
-def read_data(modified_ns):
-    return load_data()
+def read_data(source_revision):
+    return load_dashboard_data()
 
 try:
-    df = read_data(DATA_PATH.stat().st_mtime_ns)
+    source_revision = "postgres" if postgres_configured() else DATA_PATH.stat().st_mtime_ns
+    df = read_data(source_revision)
 except (OSError, ValueError, pd.errors.ParserError) as exc:
     st.error(f"Unable to load provider data: {exc}")
     st.stop()
 if 'uploaded_data' in st.session_state:
     df = st.session_state.uploaded_data
+try:
+    # A defensive gate also protects against an invalid dataframe being placed
+    # directly into session state. No metrics, report, or copilot path runs
+    # until the aggregate provider-day contract is valid.
+    df = validate_data(df)
+except ValueError as exc:
+    header()
+    st.error(f"Data validation failed. Dashboard and copilot analysis are disabled: {exc}")
+    st.caption("Correct the source file and upload it again. The app does not infer or repair operational measures.")
+    render_data_controls()
+    st.stop()
 header()
+if postgres_configured():
+    st.caption("Data source: PostgreSQL aggregate provider-day tables. No patient-level records are stored.")
 revision = st.session_state.get('dataset_revision', 0)
 content, controls = st.columns([3.6, 1.45], gap="large")
 with controls, st.container(border=True, key="dashboard_filters"):
+    st.subheader("Demo access")
+    profiles = demo_profiles(df)
+    profile_by_key = {profile.key: profile for profile in profiles}
+    selected_profile_key = st.selectbox(
+        "View as",
+        options=list(profile_by_key),
+        format_func=lambda key: profile_by_key[key].label,
+        key="demo_access_profile",
+        help="Changes the in-memory aggregate data scope used by this demo.",
+    )
+    active_profile = profile_by_key[selected_profile_key]
+    df = scope_data(df, active_profile)
+    st.caption(scope_description(active_profile, len(df)))
+    st.caption("Demo selector only — production access requires authenticated, server-enforced roles.")
+    st.divider()
     st.subheader("Filters")
     st.caption("Choose a period, select your team, then adjust the target.")
     period = st.selectbox("Reporting period", ["All available data" if "uploaded_data" in st.session_state else "All five years", "Latest calendar year", "Latest two calendar years", "Custom dates"], index=1)
@@ -80,30 +114,67 @@ with content:
     if filtered.empty:
         st.info("No data matches these filters. Select at least one provider, clinic, and specialty.")
         st.stop()
+    audit_filters = {
+        "access_role": active_profile.role,
+        "access_scope": active_profile.scope_label,
+        "reporting_period": period,
+        "dashboard_date_range": [str(dates[0]), str(dates[1])],
+        "specialties": specialties,
+        "clinics": clinics,
+        "providers": names,
+        "target_utilization": target,
+    }
     p = benchmark(filtered, target)
     kpis = calculate_kpis(filtered)
     visits, capacity, revenue = kpis["visits"], kpis["capacity"], kpis["revenue"]
-    columns = st.columns(4)
-    for col, label, value in zip(columns, ["Completed visits", "Capacity", "Utilization", "Revenue"],
-                                 [f"{visits:,}", f"{capacity:,}", f"{kpis['utilization']:.1%}", (f"${revenue / 1_000_000:,.2f}M" if revenue >= 1_000_000 else f"${revenue:,.0f}")]):
-        col.metric(label, value, help=f"Exact reported revenue: ${revenue:,.2f}" if label == "Revenue" else None)
+    opportunity_total = p.opportunity.sum()
+    with st.container(key="headline_kpis"):
+        columns = st.columns(4)
+        for col, label, value in zip(columns, ["Completed visits", "Utilization", "Revenue", "Modeled opportunity"],
+                                     [f"{visits:,}", f"{kpis['utilization']:.1%}",
+                                      (f"${revenue / 1_000_000:,.2f}M" if revenue >= 1_000_000 else f"${revenue:,.0f}"),
+                                      f"${opportunity_total / 1_000_000:,.2f}M" if opportunity_total >= 1_000_000 else f"${opportunity_total:,.0f}"]):
+            col.metric(label, value, help=f"Exact reported revenue: ${revenue:,.2f}" if label == "Revenue" else None)
     with st.container(key="overview_operational_kpis"):
         columns = st.columns(3)
-        columns[0].metric("Unused capacity", f"{kpis['unused_capacity']:,} slots")
-        columns[1].metric("Visits / staffed hour", f"{kpis['productivity']:.2f}")
-        columns[2].metric("Revenue opportunity", f"${p.opportunity.sum():,.0f}")
+        columns[0].metric("Capacity", f"{capacity:,} slots")
+        columns[1].metric("Unused capacity", f"{kpis['unused_capacity']:,} slots")
+        columns[2].metric("Visits / staffed hour", f"{kpis['productivity']:.2f}")
     st.caption(f"{p.provider_id.nunique()} providers · {dates[0]:%b %d, %Y} – {dates[1]:%b %d, %Y} · Opportunity modeled at {target:.0%} utilization")
 
     overview, copilot, benchmarks, opportunities, workspace, scenarios, executive, reporting = st.tabs(["Overview", "Ask copilot", "Compare", "Opportunities", "Executive workspace", "Scenarios", "Executive brief", "Data & Reporting"])
     with overview:
         monthly = monthly_performance(filtered)
+        priority_provider = p.sort_values("opportunity", ascending=False).iloc[0]
+        unbooked = int((filtered.capacity - filtered.booked).sum())
+        st.markdown(
+            f'''<div class="priority-panel">
+              <div class="priority-title">✦ Copilot identified 3 operational priorities</div>
+              <ul>
+                <li>{int((p.utilization < target).sum())} of {len(p)} providers are below the selected {target:.0%} utilization target.</li>
+                <li>{html.escape(priority_provider.provider)} has the largest modeled opportunity: ${priority_provider.opportunity:,.0f}.</li>
+                <li>Unused capacity includes {unbooked:,} unbooked slots and {int(filtered.no_shows.sum()):,} no-shows.</li>
+              </ul>
+              <div class="priority-note">Calculated from the selected team and period. Use Ask Copilot for a grounded follow-up.</div>
+            </div>''', unsafe_allow_html=True)
         left, right = st.columns(2)
         with left:
-            st.subheader("Visits and available capacity")
+            st.markdown('<div class="overview-section-title">Performance trend</div><div class="overview-section-note">Completed visits and staffed appointment capacity by month</div>', unsafe_allow_html=True)
             st.plotly_chart(visits_chart(monthly), width="stretch")
         with right:
-            st.subheader("Revenue by month")
-            st.plotly_chart(revenue_chart(monthly), width="stretch")
+            st.markdown('<div class="overview-section-title">Opportunity concentration</div><div class="overview-section-note">Providers with the largest modeled revenue opportunity</div>', unsafe_allow_html=True)
+            st.plotly_chart(opportunity_concentration_chart(p), width="stretch")
+        st.markdown('<div class="overview-section-title">Top opportunities</div><div class="overview-section-note">Provider-level operational review items; overlapping signals are not additive.</div>', unsafe_allow_html=True)
+        overview_opportunities = detect_opportunities(p, target).head(5)
+        if overview_opportunities.empty:
+            st.info("No configured opportunity rules triggered for this selection.")
+        else:
+            st.dataframe(overview_opportunities[["provider", "utilization", "utilization_gap_pp", "opportunity", "signals"]],
+                         hide_index=True, width="stretch", column_config={
+                             "utilization": st.column_config.NumberColumn("Utilization", format="percent"),
+                             "utilization_gap_pp": st.column_config.NumberColumn("Peer gap (pp)", format="%.1f"),
+                             "opportunity": st.column_config.NumberColumn("Modeled opportunity", format="dollar"),
+                             "signals": st.column_config.TextColumn("Action")})
         from src.deep_analysis import annual_summary
         with st.expander("Annual performance scorecard", expanded=True):
             annual = annual_summary(filtered)
@@ -135,10 +206,16 @@ with content:
             st.caption("Reported revenue across the selected period")
             st.plotly_chart(provider_revenue_chart(p), width="stretch")
         st.subheader("Provider scorecard")
-        st.caption("Peer utilization is weighted by capacity within each specialty and current filters, including the provider. Productivity is visits per staffed hour, not clinical quality.")
-        st.dataframe(p[["provider", "specialty", "clinic", "visits", "capacity", "utilization", "peer_utilization", "visits_per_hour", "peer_productivity", "productivity_index", "utilization_gap_pp", "peer_count", "revenue"]],
+        st.caption("Specialty peer utilization is weighted by capacity. Contextual medians describe the typical selected provider in a specialty, practice, or organization; they are not rankings. All groups include the provider.")
+        st.dataframe(p[["provider", "specialty", "clinic", "visits", "capacity", "utilization", "specialty_median_utilization", "practice_median_utilization", "organization_median_utilization", "specialty_median_gap_pp", "practice_median_gap_pp", "organization_median_gap_pp", "peer_utilization", "visits_per_hour", "peer_productivity", "productivity_index", "utilization_gap_pp", "peer_count", "revenue"]],
                      hide_index=True, width="stretch", column_config={
                          "utilization": st.column_config.NumberColumn("Utilization", format="percent"),
+                         "specialty_median_utilization": st.column_config.NumberColumn("Specialty median", format="percent"),
+                         "practice_median_utilization": st.column_config.NumberColumn("Practice median", format="percent"),
+                         "organization_median_utilization": st.column_config.NumberColumn("Organization median", format="percent"),
+                         "specialty_median_gap_pp": st.column_config.NumberColumn("vs specialty median (pp)", format="%.1f"),
+                         "practice_median_gap_pp": st.column_config.NumberColumn("vs practice median (pp)", format="%.1f"),
+                         "organization_median_gap_pp": st.column_config.NumberColumn("vs organization median (pp)", format="%.1f"),
                          "peer_utilization": st.column_config.NumberColumn("Specialty peer utilization", format="percent"),
                          "visits_per_hour": st.column_config.NumberColumn("Visits / staffed hour", format="%.2f"),
                          "revenue": st.column_config.NumberColumn("Revenue", format="dollar")})
@@ -185,6 +262,17 @@ with content:
                     st.session_state.pop("executive_brief", None)
                     with st.spinner("Preparing executive brief…"):
                         st.session_state.executive_brief = generate_brief(filtered, target, use_ai=live and configuration_ready())
+                    generated = st.session_state.executive_brief
+                    audit_response = {
+                        "text": "\n\n".join(generated["sections"].values()),
+                        "status": "answered",
+                        "grounding_details": [{
+                            "label": "Executive brief inputs", "start": dates[0], "end": dates[1],
+                            "providers": int(filtered.provider_id.nunique()), "records": len(filtered),
+                        }],
+                    }
+                    record_query(st.session_state, "Generate AI Executive Brief", audit_response, query_data,
+                                 audit_filters, "Executive brief generation")
                 brief = st.session_state.get("executive_brief")
                 if brief and brief["context_key"] == current_key:
                     st.caption(brief["mode"])
@@ -208,6 +296,7 @@ with content:
                             ask_brief = st.form_submit_button("Ask about brief", type="primary")
                         if ask_brief and brief_question.strip():
                             reply = respond(brief_question, filtered, target, st.session_state.brief_discussion, raw_df=query_data, data_bounds=data_bounds)
+                            record_query(st.session_state, brief_question, reply, query_data, audit_filters, "Executive brief discussion")
                             st.session_state.brief_discussion.extend([{"role": "user", "text": brief_question}, {"role": "assistant", **reply}])
                             st.session_state.brief_discussion = st.session_state.brief_discussion[-40:]
                         history = st.session_state.brief_discussion
@@ -216,6 +305,9 @@ with content:
                                 with st.chat_message(message["role"]):
                                     st.markdown(message["text"])
                                     if message["role"] == "assistant":
+                                        audit = next((item for item in st.session_state.get("copilot_audit", []) if item["audit_id"] == message.get("audit_id")), None)
+                                        if audit:
+                                            render_calculation_path(audit)
                                         st.caption(message.get("grounding", "No metrics calculated") + " · " + message["status"])
                                         if message.get("chart") is not None:
                                             st.plotly_chart(message["chart"], width="stretch", key=f"brief_chart_{start}")
@@ -242,7 +334,8 @@ with content:
         with voice_area:
             st.subheader("Voice conversation")
             st.caption("A separate conversation with its own memory. Start voice, speak, then pause for an answer.")
-            render_voice(filtered, target, chat_scope, raw_df=query_data, data_bounds=data_bounds)
+            render_voice(filtered, target, chat_scope, raw_df=query_data, data_bounds=data_bounds,
+                         audit_filters=audit_filters)
             with st.expander("Voice chat history"):
                 voice_history = st.session_state.get("voice_history", [])
                 if not voice_history:
@@ -276,6 +369,7 @@ with content:
             if question or suggested or pending_follow_up:
                 prompt = question or suggested or pending_follow_up
                 response = respond(prompt, filtered, target, st.session_state.chat_history, raw_df=query_data, data_bounds=data_bounds)
+                record_query(st.session_state, prompt, response, query_data, audit_filters, "Text copilot")
                 st.session_state.chat_history.extend([
                     {"role": "user", "text": prompt}, {"role": "assistant", **response}])
                 st.session_state.chat_history = st.session_state.chat_history[-40:]
@@ -289,6 +383,9 @@ with content:
                 with st.chat_message(message["role"]):
                     st.markdown(message["text"])
                     if message["role"] == "assistant":
+                        audit = next((item for item in st.session_state.get("copilot_audit", []) if item["audit_id"] == message.get("audit_id")), None)
+                        if audit:
+                            render_calculation_path(audit)
                         if message.get("query_plan"):
                             with st.expander("How this answer was calculated"):
                                 st.json(message["query_plan"])
@@ -315,11 +412,13 @@ with content:
                                 if follow_columns[index].button(item["label"], key="follow_" + item["label"]):
                                     st.session_state.pending_follow_up = item["question"]
                                     st.rerun()
+            render_audit_trail(st.session_state)
     with st.expander("Metric definitions and assumptions"):
         st.markdown("""
         - **Utilization:** completed visits ÷ available appointment slots; all rollups use weighted totals.
         - **Booking rate:** booked ÷ capacity. **No-show rate:** (booked − visits) ÷ booked; zero when no bookings.
         - **Specialty benchmark:** specialty total visits ÷ specialty total capacity; productivity uses specialty staffed hours instead. Peers include self within the selection; one-provider groups are self-comparisons.
+        - **Utilization context medians:** median of aggregated provider utilization rates within the selected specialty, practice/clinic, or organization. Each reference group includes the provider and is descriptive context, not a performance rank.
         - **Utilization gap (pp):** 100 × (provider utilization − specialty utilization). **Productivity index:** provider visits/hour ÷ specialty visits/hour.
         - **Productivity:** completed visits ÷ staffed hours. FTE is reflected in scheduled hours and slots.
         - **Revenue:** synthetic realized revenue; not charges, profit, or a reimbursement forecast.

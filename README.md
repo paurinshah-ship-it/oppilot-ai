@@ -101,7 +101,7 @@ Additional workflows support:
 ## Product Architecture
 
 ```text
-Synthetic provider data
+PostgreSQL aggregate provider-day tables (or local synthetic CSV fallback)
         ↓
 Data validation and loading
         ↓
@@ -119,6 +119,29 @@ Decision-support interface
 The architecture intentionally separates quantitative calculations from generative AI.
 
 The analytics layer determines the numbers. The Copilot explains and helps users investigate those numbers.
+
+### PostgreSQL analytics boundary
+
+Set `DATABASE_URL` to use PostgreSQL as the dashboard source of record. Run
+`python scripts/load_postgres.py` once to create and load the schema from the
+synthetic demo dataset. The normalized schema is in `db/schema.sql`: `specialty`,
+`provider`, `appointment`, and `performance` tables hold aggregate operational
+provider-day data only.
+
+Copilot questions are converted to catalog metric keys, dimensions, dates, and
+filters. The backend accepts only that allowlisted analytical representation and
+compiles parameterized read-only SQL. It never executes LLM-generated SQL, and
+user values are passed as bound parameters. Pandas is retained only as the
+Streamlit/Plotly dataframe adapter after retrieval.
+
+### Scale-test path
+
+Run `python scripts/generate_appointment_events.py` to create one million
+fictional appointment events without patient identifiers or clinical data. The
+file is intentionally ignored by Git. For large datasets, use PostgreSQL's
+`COPY` loader (`python scripts/load_appointment_events.py`) and the safe queries in `src/scalable_analytics.py`: aggregation
+happens in SQL, repeat aggregate queries use bounded TTL caching, and detailed
+event access uses keyset pagination rather than loading every row into Pandas.
 
 ## Technology Stack
 
@@ -205,6 +228,7 @@ Python 3.10+ is recommended.
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
+.venv/bin/python scripts/generate_appointment_events.py
 streamlit run app.py
 ```
 

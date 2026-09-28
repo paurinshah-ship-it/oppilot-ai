@@ -23,6 +23,21 @@ def test_weighted_metrics_and_opportunity():
     assert benchmark(df, .5).opportunity.sum() == 0
     assert "$1,200" in answer("opportunity", p, .8)
 
+
+def test_provider_utilization_context_uses_medians_not_a_rank():
+    import pytest
+    df = pd.DataFrame([
+        dict(provider_id="A", provider="Dr. A", specialty="Cardiology", clinic="North", visits=7, capacity=10, booked=8, revenue=700, staffed_hours=4),
+        dict(provider_id="B", provider="Dr. B", specialty="Cardiology", clinic="North", visits=8, capacity=10, booked=9, revenue=800, staffed_hours=4),
+        dict(provider_id="C", provider="Dr. C", specialty="Primary Care", clinic="South", visits=9, capacity=10, booked=10, revenue=900, staffed_hours=4),
+    ])
+    row = benchmark(df).set_index("provider").loc["Dr. A"]
+    assert row.specialty_median_utilization == .75
+    assert row.practice_median_utilization == .75
+    assert row.organization_median_utilization == .8
+    assert row.specialty_median_gap_pp == pytest.approx(-5)
+    assert row.organization_median_gap_pp == pytest.approx(-10)
+
 def test_app_and_empty_filters():
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run(timeout=30)
     assert not app.exception
@@ -40,6 +55,20 @@ def test_filters_target_and_chat():
     app.chat_input[0].set_value("Where is the largest opportunity?").run()
     assert not app.exception
     assert "90%" in app.chat_message[1].markdown[0].value
+
+
+def test_demo_provider_access_scopes_every_dashboard_metric():
+    from src.data import load_data
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run()
+    next(widget for widget in app.selectbox if widget.label == "View as").set_value("provider").run()
+
+    provider_filter = next(widget for widget in app.multiselect if widget.label == "Select providers")
+    assert provider_filter.options == ["Dr. Maya Patel"]
+    df = load_data()
+    expected = df[(df.provider == "Dr. Maya Patel") & (df.date.dt.year == df.date.dt.year.max())].visits.sum()
+    assert app.metric[0].value == f"{expected:,}"
+    assert any("Own aggregated performance" in caption.value for caption in app.caption)
+    assert not app.exception
 
 def test_kpis_are_weighted_and_empty_safe():
     from src.analytics import calculate_kpis

@@ -44,6 +44,10 @@ def benchmark(df: pd.DataFrame, target: float = .85) -> pd.DataFrame:
     peer_productivity = specialty total visits / specialty total staffed hours.
     utilization_gap_pp = 100 × (provider utilization − peer utilization).
     productivity_index = provider productivity / specialty productivity.
+    specialty/practice/organization median utilization = the median of the
+    aggregated provider utilization rates within the current selection,
+    including the provider. These are contextual reference values, not ranks
+    and not weighted system utilization rates.
     Zero denominators yield 0; singleton peer groups are flagged separately.
     """
     if not 0 <= target <= 1:
@@ -70,6 +74,18 @@ def benchmark(df: pd.DataFrame, target: float = .85) -> pd.DataFrame:
     out["utilization_gap_pp"] = 100 * (out.utilization - out.peer_utilization)
     out["productivity_index"] = out.visits_per_hour.div(
         out.peer_productivity.where(out.peer_productivity.ne(0))).fillna(0)
+    # Medians answer a different question than the weighted specialty peer
+    # metric above: they describe a typical selected provider. Keep both so the
+    # product never presents one as a substitute for the other.
+    out["specialty_median_utilization"] = out.specialty.map(out.groupby("specialty").utilization.median())
+    out["practice_median_utilization"] = out.clinic.map(out.groupby("clinic").utilization.median())
+    out["organization_median_utilization"] = out.utilization.median()
+    out["specialty_median_count"] = out.specialty.map(out.groupby("specialty").provider_id.nunique())
+    out["practice_median_count"] = out.clinic.map(out.groupby("clinic").provider_id.nunique())
+    out["organization_median_count"] = len(out)
+    out["specialty_median_gap_pp"] = 100 * (out.utilization - out.specialty_median_utilization)
+    out["practice_median_gap_pp"] = 100 * (out.utilization - out.practice_median_utilization)
+    out["organization_median_gap_pp"] = 100 * (out.utilization - out.organization_median_utilization)
     return out.sort_values("opportunity", ascending=False)
 
 

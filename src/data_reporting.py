@@ -1,5 +1,6 @@
 """Local CSV staging, explicit mapping and non-imputing quality checks."""
 from io import BytesIO
+import hashlib
 import re
 import pandas as pd
 from src.data import validate_data
@@ -8,12 +9,30 @@ COLUMNS = ['date', 'provider_id', 'provider', 'specialty', 'clinic', 'fte',
            'staffed_hours', 'capacity', 'booked', 'no_shows', 'visits', 'revenue']
 NUMERIC = COLUMNS[5:]
 ALIASES = {
-    'date': ['service_date', 'appointment_date'],
-    'provider_id': ['physician_id'], 'provider': ['physician', 'provider_name'],
-    'specialty': ['speciality'], 'clinic': ['location'], 'fte': [],
-    'staffed_hours': ['hours_worked'], 'capacity': ['available_slots'],
-    'booked': ['appointments_booked'], 'no_shows': ['no_show_count'],
-    'visits': ['appts_completed', 'completed', 'completed_visits'], 'revenue': [],
+    # These are operational-data aliases only. The mapping step remains
+    # user-confirmed because an identifier or financial definition can differ
+    # by source system.
+    'date': ['service_date', 'appointment_date', 'date_of_service', 'visit_date', 'dos'],
+    'provider_id': ['physician_id', 'clinician_id', 'doctor_id', 'provider_identifier'],
+    'provider': ['physician', 'physician_name', 'provider_name', 'clinician_name', 'doctor_name'],
+    'specialty': ['speciality', 'specialty_name', 'department'],
+    'clinic': ['location', 'clinic_name', 'practice', 'practice_name', 'site', 'site_name'],
+    'fte': ['provider_fte', 'fte_value'],
+    'staffed_hours': ['hours_worked', 'staffed_hrs', 'scheduled_hours', 'clinical_hours'],
+    'capacity': ['available_slots', 'appointment_capacity', 'total_slots', 'slots_available'],
+    'booked': ['appointments_booked', 'appointments_scheduled', 'scheduled_appointments', 'scheduled'],
+    'no_shows': ['no_show_count', 'no_shows', 'no_show', 'no_show_visits'],
+    'visits': ['appts_completed', 'completed', 'completed_visits', 'visits_complete',
+               'completed_appointments', 'appointments_completed'],
+    'revenue': ['net_revenue', 'realized_revenue', 'collected_revenue'],
+}
+
+FIELD_LABELS = {
+    'date': 'Date', 'provider_id': 'Provider ID', 'provider': 'Provider',
+    'specialty': 'Specialty', 'clinic': 'Practice / clinic', 'fte': 'FTE',
+    'staffed_hours': 'Staffed hours', 'capacity': 'Appointment capacity',
+    'booked': 'Booked appointments', 'no_shows': 'No-shows',
+    'visits': 'Completed visits', 'revenue': 'Realized revenue / collections',
 }
 
 
@@ -29,17 +48,61 @@ def read_upload(payload):
     return df
 
 
-def suggest_mapping(columns):
-    """Only unique recognized aliases are suggested; ambiguous fields stay empty.
+def schema_profile(raw: pd.DataFrame) -> dict:
+    """Return a stable raw-file schema signature without retaining file values."""
+    columns = [str(column) for column in raw.columns]
+    normalized = [re.sub(r'[^a-z0-9]+', '_', column.strip().lower()).strip('_') for column in columns]
+    fingerprint = hashlib.sha256('|'.join(normalized).encode()).hexdigest()[:16]
+    return {'columns': columns, 'fingerprint': fingerprint}
 
-    Deliberately no collections/revenue or cancellations/no-shows equivalence.
+
+def schema_change(previous: dict | None, current: dict) -> str | None:
+    """Describe a raw header change that should be reviewed during mapping."""
+    if not previous or previous.get('fingerprint') == current.get('fingerprint'):
+        return None
+    before, after = set(previous.get('columns', [])), set(current.get('columns', []))
+    added, removed = sorted(after - before), sorted(before - after)
+    parts = []
+    if added:
+        parts.append('added: ' + ', '.join(added))
+    if removed:
+        parts.append('removed: ' + ', '.join(removed))
+    return 'Raw upload schema changed since the previous activated file' + (f" ({'; '.join(parts)})" if parts else '') + '. Review each proposed mapping before activation.'
+
+
+def mapping_suggestions(columns):
+    """Recognize likely healthcare-operations fields for explicit user review.
+
+    A source column is auto-proposed only when it maps to exactly one canonical
+    field. Ambiguous names and unsupported semantic substitutions (for example,
+    cancellations as no-shows) remain unmapped.
     """
-    normalize = lambda s: re.sub(r'[^a-z0-9]+', '_', s.strip().lower()).strip('_')
-    result = {}
+    normalize = lambda s: re.sub(r'[^a-z0-9]+', '_', str(s).strip().lower()).strip('_')
+    normalized = {column: normalize(column) for column in columns}
+    matches_by_field = {}
+    candidate_fields = {}
     for field in COLUMNS:
-        matches = [c for c in columns if normalize(c) in [field] + ALIASES[field]]
-        result[field] = matches[0] if len(matches) == 1 else None
-    return result
+        accepted = {field, *ALIASES[field]}
+        matches = [column for column, value in normalized.items() if value in accepted]
+        matches_by_field[field] = matches
+        for column in matches:
+            candidate_fields.setdefault(column, []).append(field)
+    suggestions = {}
+    for field, matches in matches_by_field.items():
+        selected = matches[0] if len(matches) == 1 and len(candidate_fields[matches[0]]) == 1 else None
+        suggestions[field] = {
+            'source_column': selected,
+            'target_field': field,
+            'target_label': FIELD_LABELS[field],
+            'confidence': 'Exact field name' if selected and normalized[selected] == field else 'Likely healthcare operations alias' if selected else 'Needs mapping',
+        }
+    return suggestions
+
+
+def suggest_mapping(columns):
+    """Backward-compatible field-to-column proposals for the activation flow."""
+    details = mapping_suggestions(columns)
+    return {field: item['source_column'] for field, item in details.items()}
 
 
 def project_columns(raw, mapping):
@@ -82,8 +145,11 @@ def quality_checks(df):
     add('Required values', d[COLUMNS].isna().any(axis=1).sum(), 'Null or invalid dates / numeric values; no imputation')
     add('Provider names and identifiers', d[COLUMNS[1:5]].fillna('').astype(str).apply(lambda s: s.str.strip().eq('')).any(axis=1).sum(), 'Names, IDs, specialties and clinics must be nonblank')
     add('Negative / infinite values', ((d[NUMERIC] < 0) | d[NUMERIC].isin([float('inf'), -float('inf')])).any(axis=1).sum(), 'All measures must be finite and nonnegative')
+    add('Negative realized revenue / collections', (d.revenue < 0).sum(), 'Negative financial values are not valid for this realized-revenue metric')
     add('Duplicate provider/date rows', d.duplicated(['provider_id', 'date'], keep=False).sum(), 'Duplicates would double-count activity')
-    add('Utilization over 100%', (d.visits > d.capacity).sum(), 'Completed visits must not exceed capacity')
+    over_capacity = d.visits > d.capacity
+    add('Completed visits above capacity', over_capacity.sum(), 'Completed visits must not exceed available appointment capacity')
+    add('Utilization over 100%', over_capacity.sum(), 'Utilization is visits ÷ capacity and cannot exceed 100%')
     invalid = (d.booked > d.capacity) | (d.visits + d.no_shows != d.booked) | (d[['capacity','booked','no_shows','visits']] % 1 != 0).any(axis=1)
     add('Appointment counts', invalid.sum(), 'Whole counts: visits + no-shows = booked <= capacity; cancellations are not a supported measure')
     add('Staffing values', (d[['fte','staffed_hours','capacity']] <= 0).any(axis=1).sum(), 'Staffed days require positive FTE, hours and capacity')
@@ -91,9 +157,9 @@ def quality_checks(df):
     add('Provider identity consistency', conflicts.sum(), 'Each ID has one name, specialty and clinic')
     if d.date.notna().any():
         gaps = pd.bdate_range(d.date.min(), d.date.max()).difference(pd.DatetimeIndex(d.date.dropna().unique()))
-        add('Unobserved weekdays across dataset', len(gaps), 'May be holidays or unscheduled days; completeness cannot be established without a staffing roster', True)
+        add('Missing dates / unobserved weekdays across dataset', len(gaps), 'May be holidays or unscheduled days; completeness cannot be established without a staffing roster', True)
         provider_gaps = sum(len(pd.bdate_range(g.date.min(), g.date.max()).difference(pd.DatetimeIndex(g.date.dropna().unique()))) for _, g in d.dropna(subset=['date']).groupby('provider_id'))
-        add('Unobserved provider weekdays', provider_gaps, 'Within each provider\'s observed bounds; may be leave or unscheduled days, not proven missing records', True)
+        add('Potential missing provider-day records', provider_gaps, 'Within each provider\'s observed bounds; may be leave or unscheduled days, not proven missing records', True)
     return pd.DataFrame(checks)
 
 

@@ -7,6 +7,7 @@ from src.workspace import (executive_summary, top_opportunities, scorecard,
 from src.comparative import formatted, change_text
 from src.date_ranges import format_range
 from src.investigations_ui import render_investigations
+from src.recommendations_ui import render_recommendations
 
 
 def render_workspace(df, target):
@@ -24,6 +25,8 @@ def render_workspace(df, target):
             st.markdown(saved['text'])
     elif saved:
         st.info('Selection or target changed. Generate a new executive summary for the current scope.')
+
+    render_recommendations(df, target, uploads_active="uploaded_data" in st.session_state)
 
     st.subheader('Top Opportunities')
     st.caption('Each category retains tied leaders. Slot counts, rates, and modeled dollars have different units; overlapping opportunities must not be added together.')

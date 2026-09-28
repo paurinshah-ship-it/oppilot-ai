@@ -8,6 +8,7 @@ import numpy as np
 import streamlit as st
 import streamlit.components.v1 as components
 from src.conversation import respond
+from src.copilot_audit import record_query
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / '.models' / 'tiny.en'
@@ -70,7 +71,7 @@ def process_turn(event, df, target, history, transcriber=transcribe, raw_df=None
     return text, reply
 
 
-def render_voice(df, target, scope, raw_df=None, data_bounds=None):
+def render_voice(df, target, scope, raw_df=None, data_bounds=None, audit_filters=None):
     """Stable component key preserves microphone across Streamlit reruns.
 
     Each utterance has a session token and monotonic turn. Frontend rejects
@@ -96,6 +97,8 @@ def render_voice(df, target, scope, raw_df=None, data_bounds=None):
     st.session_state.voice_processed = token
     try:
         question, reply = process_turn(event, df, target, st.session_state.voice_history, raw_df=raw_df, data_bounds=data_bounds)
+        record_query(st.session_state, question, reply, raw_df if raw_df is not None else df,
+                     audit_filters or {}, "Voice copilot")
         st.session_state.voice_history.extend([{'role': 'user', 'text': question}, {'role': 'assistant', **reply}])
         st.session_state.voice_history = st.session_state.voice_history[-40:]
         response = {'text': reply['text'], 'transcript': question}

@@ -1,5 +1,6 @@
 """Plotly figures consume Pandas aggregates; no UI or file access."""
 import plotly.express as px
+import pandas as pd
 
 COLORS = {"Primary Care": "#7563B5", "Cardiology": "#5276BC",
           "Dermatology": "#8873B2", "Orthopedics": "#CB8B47", "Neurology": "#8D5776",
@@ -75,3 +76,35 @@ def utilization_trend_chart(monthly, target):
     fig.update_yaxes(tickformat=".0%", range=[0, 1.05])
     fig.update_traces(hovertemplate="%{x|%b %Y}<br>%{y:.1%}<extra></extra>")
     return polish(fig)
+
+
+def opportunity_concentration_chart(providers):
+    """Provider-level modeled opportunity; values are pre-calculated by benchmark."""
+    ordered = providers.sort_values("opportunity", ascending=False).head(12).sort_values("opportunity")
+    fig = px.bar(ordered, x="opportunity", y="provider", orientation="h",
+                 color_discrete_sequence=["#2F6BFF"],
+                 labels={"opportunity": "Modeled opportunity ($)", "provider": ""})
+    fig.update_traces(hovertemplate="<b>%{y}</b><br>$%{x:,.0f}<extra></extra>")
+    fig.update_xaxes(tickprefix="$", tickformat="~s")
+    return polish(fig, height=360)
+
+
+def monthly_no_show_by_specialty_chart(monthly_specialty):
+    """Render an allowlisted monthly specialty no-show chart from Pandas output.
+
+    ``monthly_specialty`` must already contain weighted no-show rates calculated
+    from provider-day rows. This function accepts data, never natural language
+    or generated visualization instructions.
+    """
+    required = {"month", "specialty", "no_show_rate"}
+    if not required.issubset(monthly_specialty.columns):
+        raise ValueError("Monthly specialty no-show chart requires approved aggregate columns.")
+    data = monthly_specialty.copy()
+    data["month"] = pd.to_datetime(data["month"], format="%Y-%m")
+    fig = px.line(data, x="month", y="no_show_rate", color="specialty", markers=True,
+                  color_discrete_map=COLORS,
+                  labels={"month": "", "no_show_rate": "No-show rate", "specialty": "Specialty"})
+    fig.update_yaxes(tickformat=".0%", rangemode="tozero")
+    fig.update_traces(hovertemplate="%{x|%b %Y}<br>%{fullData.name}: %{y:.1%}<extra></extra>")
+    fig.update_layout(hovermode="x unified")
+    return polish(fig, height=390)

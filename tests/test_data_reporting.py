@@ -4,7 +4,8 @@ import pandas as pd
 import pytest
 from pypdf import PdfReader
 from src.data import generate_data, validate_data
-from src.data_reporting import read_upload, suggest_mapping, project_columns, quality_checks, activate_upload, COLUMNS
+from src.data_reporting import (read_upload, suggest_mapping, mapping_suggestions, project_columns,
+                                quality_checks, activate_upload, schema_profile, schema_change, COLUMNS)
 from src.reporting import performance_report
 from src.analytics import calculate_kpis
 from streamlit.testing.v1 import AppTest
@@ -40,19 +41,43 @@ def test_ambiguous_and_semantic_mapping():
     with pytest.raises(ValueError): read_upload(b'date,provider\n')
 
 
+def test_healthcare_operations_column_recognition_requires_confirmation():
+    details = mapping_suggestions(['physician_name', 'visits_complete', 'net_revenue'])
+    assert details['provider']['source_column'] == 'physician_name'
+    assert details['provider']['target_label'] == 'Provider'
+    assert details['visits']['source_column'] == 'visits_complete'
+    assert details['visits']['target_label'] == 'Completed visits'
+    assert details['revenue']['source_column'] == 'net_revenue'
+    assert details['revenue']['target_label'] == 'Realized revenue / collections'
+    # Similar-looking cancellations are intentionally never converted to no-shows.
+    assert mapping_suggestions(['cancellations'])['no_shows']['source_column'] is None
+
+
 def test_quality_errors_and_gaps():
     df=fixture().iloc[:3].copy()
     df.loc[df.index[0],'revenue']=None
     df.loc[df.index[1],'visits']=999
+    df.loc[df.index[1],'revenue']=-1
     df.loc[df.index[2],'staffed_hours']=-1
     df=pd.concat([df,df.iloc[:1]])
     checks=quality_checks(df).set_index('Check')
-    for name in ['Required values','Duplicate provider/date rows','Negative / infinite values','Utilization over 100%','Appointment counts']:
+    for name in ['Required values','Duplicate provider/date rows','Negative / infinite values',
+                 'Negative realized revenue / collections', 'Completed visits above capacity',
+                 'Utilization over 100%','Appointment counts']:
         assert checks.loc[name,'Status']=='Error'
     df=fixture(); df=df[df.date != df.date.iloc[4]]
     checks=quality_checks(df).set_index('Check')
-    assert checks.loc['Unobserved provider weekdays','Status']=='Review'
-    assert 'not proven missing' in checks.loc['Unobserved provider weekdays','Detail']
+    assert checks.loc['Potential missing provider-day records','Status']=='Review'
+    assert 'not proven missing' in checks.loc['Potential missing provider-day records','Detail']
+
+
+def test_schema_change_is_detected_without_retaining_raw_values():
+    previous = schema_profile(pd.DataFrame(columns=['physician_name', 'visits_complete']))
+    current = schema_profile(pd.DataFrame(columns=['physician_name', 'net_revenue']))
+    notice = schema_change(previous, current)
+    assert 'schema changed' in notice.lower()
+    assert 'added: net_revenue' in notice
+    assert 'removed: visits_complete' in notice
 
 
 def test_report_grounded_and_complete(tmp_path):
@@ -85,6 +110,17 @@ def test_uploaded_app_and_restore():
     next(b for b in app.button if b.label=='Restore synthetic demo').click().run()
     assert not app.exception
     assert next(w for w in app.selectbox if w.label=='Reporting period').value=='Latest calendar year'
+
+
+def test_invalid_uploaded_data_disables_dashboard_and_copilot():
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / 'app.py', default_timeout=40)
+    invalid = fixture().copy()
+    invalid.loc[invalid.index[0], 'visits'] = invalid.loc[invalid.index[0], 'capacity'] + 1
+    app.session_state['uploaded_data'] = invalid
+    app.run()
+    assert any('Data validation failed' in error.value for error in app.error)
+    assert not app.tabs
+    assert not app.exception
 
 
 def test_report_unknown_rates_and_escaped_labels():

@@ -31,8 +31,25 @@ echo "--------------------------------------"
 git status --short
 echo "--------------------------------------"
 
+CHANGE_COUNT=$(git status --porcelain | awk 'END { print NR }')
+
 echo ""
-read -p "Deploy these changes? (y/n): " CONFIRM
+echo "Change size summary:"
+echo "--------------------------------------"
+git diff --stat
+echo "--------------------------------------"
+echo "Total changed or untracked files: ${CHANGE_COUNT}"
+
+if [ "$CHANGE_COUNT" -gt 10 ]; then
+    echo ""
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "WARNING: LARGE DEPLOYMENT"
+    echo "${CHANGE_COUNT} files will be deployed. Review all changes carefully."
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+fi
+
+echo ""
+read -p "Deploy ALL of these changes? (y/n): " CONFIRM
 
 if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
     echo ""

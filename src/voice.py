@@ -76,6 +76,7 @@ def render_voice(df, target, scope, raw_df=None, data_bounds=None):
     Each utterance has a session token and monotonic turn. Frontend rejects
     responses superseded by speech, Stop, a filter change, or Clear chat.
     """
+    st.session_state.setdefault('voice_history', [])
     component = components.declare_component('local_voice', path=str(ROOT / 'voice_frontend'))
     ready = (MODEL_PATH / 'model.bin').exists()
     event = component(scope=scope, ready=ready, response=st.session_state.get('voice_response'),
@@ -83,13 +84,20 @@ def render_voice(df, target, scope, raw_df=None, data_bounds=None):
     if not isinstance(event, dict) or event.get('scope') != scope:
         return
     token = (event.get('session'), event.get('turn'))
+    if event.get('type') == 'clear':
+        if token != st.session_state.get('voice_processed'):
+            st.session_state.voice_processed = token
+            st.session_state.voice_history = []
+            st.session_state.pop('voice_response', None)
+            st.rerun()
+        return
     if token == st.session_state.get('voice_processed') or event.get('type') != 'audio':
         return
     st.session_state.voice_processed = token
     try:
-        question, reply = process_turn(event, df, target, st.session_state.chat_history, raw_df=raw_df, data_bounds=data_bounds)
-        st.session_state.chat_history.extend([{'role': 'user', 'text': question}, {'role': 'assistant', **reply}])
-        st.session_state.chat_history = st.session_state.chat_history[-40:]
+        question, reply = process_turn(event, df, target, st.session_state.voice_history, raw_df=raw_df, data_bounds=data_bounds)
+        st.session_state.voice_history.extend([{'role': 'user', 'text': question}, {'role': 'assistant', **reply}])
+        st.session_state.voice_history = st.session_state.voice_history[-40:]
         response = {'text': reply['text'], 'transcript': question}
     except VoiceError as exc:
         response = {'error': str(exc)}

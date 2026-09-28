@@ -12,7 +12,7 @@ def apply_style():
     [data-testid="stMetric"] {background: #FFFFFF; border: 1px solid #E4DFF0;
       border-top: 3px solid #7563B5; border-radius: 12px; padding: 16px;
       box-shadow: 0 3px 12px #30204C06;}
-    [data-testid="stMetricLabel"] {color: #655F76; font-size: .83rem; white-space: normal;}
+    [data-testid="stMetricLabel"] {color: #655F76; font-size: .95rem; white-space: normal;}
     [data-testid="stMetricValue"] {color: #352D4B; font-weight: 700; font-size: clamp(1.2rem, 1.8vw, 1.85rem);}
     /* Scope the operational KPI treatment to this row; retain native metrics. */
     .st-key-overview_operational_kpis [data-testid="stMetric"] {
@@ -36,7 +36,33 @@ def apply_style():
       padding: 24px 28px; border-radius: 16px; color: white; margin-bottom: 16px;}
     .executive-header .eyebrow {font-size: 11px; letter-spacing: 2px; color: #DDD3F1;}
     .executive-header h1 {font-size: 30px; color: white; padding: 8px 0;}
-    .executive-header p {color: #F0EAF8; margin: 0; font-size: 14px;}
+    .executive-header p {color: #F0EAF8; margin: 0; font-size: 16px;}
+    /* Readable text, generous targets, and visible keyboard focus across the UI. */
+    [data-testid="stCaptionContainer"] {color: #595267; font-size: .95rem; line-height: 1.6;}
+    [data-testid="stWidgetLabel"] p {font-size: 1rem; font-weight: 600;}
+    .stButton button, .stDownloadButton button {min-height: 44px; border-radius: 10px;
+      border-color: #C9BEDD; font-weight: 600;}
+    button:focus-visible, input:focus-visible, textarea:focus-visible,
+    summary:focus-visible, [role="tab"]:focus-visible {
+      outline: 3px solid #594299 !important; outline-offset: 3px;
+    }
+    [role="tablist"] {flex-wrap: wrap; overflow: visible; height: auto; gap: 8px;}
+    [role="tab"] {min-height: 44px; height: auto; color: #4D435F;}
+    [role="tab"][aria-selected="true"] {box-shadow: 0 2px 8px #33254F12;
+      color: #493277; border: 1px solid #C9BEDD;}
+    [data-testid="stExpander"] {background: #FFFFFF; border-radius: 12px;}
+    [data-testid="stExpander"] summary {min-height: 48px;}
+    [data-testid="stChatMessage"] {background: #FFFFFF; border: 1px solid #E4DFF0;
+      border-radius: 16px; padding: 20px; line-height: 1.65;}
+    [data-testid="stChatInput"] {border: 1px solid #A99AC4; border-radius: 14px;}
+    .st-key-dashboard_filters {background: #FFFFFF; border-radius: 16px;}
+    @media (max-width: 760px) {
+      .block-container {padding: 1rem;}
+      .executive-header {padding: 20px;}
+      .executive-header h1 {font-size: 26px;}
+      [role="tab"] {padding: 10px;}
+      [data-testid="stMetricValue"] {overflow-wrap: anywhere; white-space: normal;}
+    }
     </style>
     """, unsafe_allow_html=True)
 

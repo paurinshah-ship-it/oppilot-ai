@@ -77,7 +77,8 @@ def test_ui_preview_staleness(monkeypatch):
     next(b for b in app.button if b.label == 'Preview calculated brief').click().run()
     assert not app.exception
     assert any(s.value == 'Strongest performance' for s in app.subheader)
-    assert next(b for b in app.button if b.label == 'Generate AI Executive Brief').disabled
+    assert not next(b for b in app.button if b.label == 'Generate AI Executive Brief').disabled
+    assert app.session_state['executive_brief']['mode'] == 'Local preview — no AI call'
     next(w for w in app.slider if w.label == "Target utilization (%)").set_value(90).run()
     assert any('Filters or target changed' in item.value for item in app.info)
     assert not app.exception

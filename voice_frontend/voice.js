@@ -71,6 +71,11 @@ $('start').onclick=async()=>{
   }catch(e){stop('Microphone could not start. Check browser permission and microphone availability.');}
 };
 $('stop').onclick=()=>{session=crypto.randomUUID();stop();};
+$('clear').onclick=()=>{
+  session=crypto.randomUUID();stop('Voice chat cleared. Press Start voice to begin again.');
+  lastReply='';$('transcript').textContent='';$('answer').textContent='';
+  send('streamlit:setComponentValue',{value:{type:'clear',scope,session,turn},dataType:'json'});resize();
+};
 $('interrupt').onclick=()=>{invalidate();status('Answer interrupted. Listening for your next question…');};
 function receiveResponse(r){
   if(!r || !active || r.scope!==scope || r.session!==session || r.turn!==turn || speech)return;

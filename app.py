@@ -5,6 +5,7 @@ from src.analytics import benchmark, answer, calculate_kpis, monthly_performance
 from src.charts import (visits_chart, revenue_chart, utilization_chart,
                         productivity_chart, provider_revenue_chart, utilization_trend_chart)
 from src.presentation import apply_style, header
+from src.forecasting_ui import render_forecasting
 from src.insights import executive_insights
 from src.conversation import respond, SUGGESTIONS, COMPARISON_QUESTIONS
 from src.voice import render_voice
@@ -36,9 +37,9 @@ if 'uploaded_data' in st.session_state:
 header()
 revision = st.session_state.get('dataset_revision', 0)
 content, controls = st.columns([3.6, 1.45], gap="large")
-with controls, st.container(border=True):
+with controls, st.container(border=True, key="dashboard_filters"):
     st.subheader("Filters")
-    st.caption("1 · Choose dates  2 · Narrow the team  3 · Set a target")
+    st.caption("Choose a period, select your team, then adjust the target.")
     period = st.selectbox("Reporting period", ["All available data" if "uploaded_data" in st.session_state else "All five years", "Latest calendar year", "Latest two calendar years", "Custom dates"], index=1)
     range_end = df.date.max().date()
     range_start = df.date.min().date()
@@ -157,6 +158,7 @@ with content:
                          hide_index=True, width="stretch")
         st.download_button("Download opportunity analysis", detect_opportunities(p, target).to_csv(index=False), "synthetic_opportunities.csv", "text/csv")
     with workspace:
+        render_forecasting(filtered)
         render_workspace(filtered, target)
     with scenarios:
         render_scenarios(filtered, target)
@@ -175,14 +177,14 @@ with content:
                 with st.expander("Review calculated metrics sent to the model"):
                     st.json(brief_context)
                 if not configuration_ready():
-                    st.caption("Live AI requires OPENAI_API_KEY and OPENAI_MODEL in the server environment. The local preview works without credentials.")
+                    st.info("Local mode: Generate AI Executive Brief will produce a calculated brief without a model call. To enable AI-prioritized actions, configure OPENAI_API_KEY and OPENAI_MODEL in the server environment and restart Streamlit. Never enter credentials in chat.")
                 preview_col, ai_col = st.columns(2)
                 preview = preview_col.button("Preview calculated brief")
-                live = ai_col.button("Generate AI Executive Brief", disabled=not configuration_ready(), type="primary")
+                live = ai_col.button("Generate AI Executive Brief", type="primary")
                 if preview or live:
                     st.session_state.pop("executive_brief", None)
                     with st.spinner("Preparing executive brief…"):
-                        st.session_state.executive_brief = generate_brief(filtered, target, use_ai=live)
+                        st.session_state.executive_brief = generate_brief(filtered, target, use_ai=live and configuration_ready())
                 brief = st.session_state.get("executive_brief")
                 if brief and brief["context_key"] == current_key:
                     st.caption(brief["mode"])
@@ -191,6 +193,33 @@ with content:
                             st.subheader(title)
                             st.text(body)
                     st.warning(brief["guardrails"])
+                    st.caption(f"Brief period: {dates[0]:%b %d, %Y} – {dates[1]:%b %d, %Y} · {len(filtered):,} provider-day records")
+                    discussion_scope = hashlib.sha256((query_data.to_csv(index=False) + filtered.to_csv(index=False) + str(target)).encode()).hexdigest()
+                    if st.session_state.get("brief_discussion_scope") != discussion_scope:
+                        st.session_state.brief_discussion = []
+                        st.session_state.brief_discussion_scope = discussion_scope
+                    with st.container(border=True):
+                        st.subheader("Discuss this brief")
+                        st.caption("Grounded local follow-ups with separate conversation memory. Questions are not sent to an AI service. Ask about a provider, compare periods, or investigate an opportunity. Please do not enter PHI.")
+                        if st.button("Clear brief conversation"):
+                            st.session_state.brief_discussion = []
+                        with st.form("brief_follow_up", clear_on_submit=True):
+                            brief_question = st.text_input("Question about this brief", placeholder="Where is our largest revenue opportunity?", max_chars=1000)
+                            ask_brief = st.form_submit_button("Ask about brief", type="primary")
+                        if ask_brief and brief_question.strip():
+                            reply = respond(brief_question, filtered, target, st.session_state.brief_discussion, raw_df=query_data, data_bounds=data_bounds)
+                            st.session_state.brief_discussion.extend([{"role": "user", "text": brief_question}, {"role": "assistant", **reply}])
+                            st.session_state.brief_discussion = st.session_state.brief_discussion[-40:]
+                        history = st.session_state.brief_discussion
+                        for start in reversed(range(0, len(history), 2)):
+                            for message in history[start:start + 2]:
+                                with st.chat_message(message["role"]):
+                                    st.markdown(message["text"])
+                                    if message["role"] == "assistant":
+                                        st.caption(message.get("grounding", "No metrics calculated") + " · " + message["status"])
+                                        if message.get("chart") is not None:
+                                            st.plotly_chart(message["chart"], width="stretch", key=f"brief_chart_{start}")
+
                 elif brief:
                     st.info("Filters or target changed. Generate a new brief for this selection.")
             except CopilotError as exc:
@@ -199,78 +228,93 @@ with content:
     with copilot:
         st.subheader("Conversational operations copilot")
         st.caption("Local, rule-based analytics conversation. Answers use selected dashboard data; no chat text is sent to a model or external service. Please do not enter PHI.")
-        with st.expander("Semantic analytics: metrics and example questions"):
-            st.dataframe(pd.DataFrame(catalog_records()), hide_index=True, width="stretch")
-            st.caption("A deterministic parser creates an allowlisted metric/dimension/date plan. Specialized comparisons, trends and scenarios retain their existing routes.")
-            for example in SEMANTIC_QUESTIONS:
-                st.code(example, language=None)
         chat_scope = hashlib.sha256((filtered.to_csv(index=False) + str(target)).encode()).hexdigest()
         if st.session_state.get("chat_scope") != chat_scope:
             had_chat = bool(st.session_state.get("chat_history"))
             st.session_state.chat_history = []
+            st.session_state.voice_history = []
+            st.session_state.pop("voice_response", None)
             st.session_state.pop("pending_follow_up", None)
             st.session_state.chat_scope = chat_scope
             if had_chat:
                 st.info("Selection changed. Chat history was cleared so replies use the current data.")
-        if st.button("Clear chat"):
-            st.session_state.chat_history = []
-            st.session_state.pop("pending_follow_up", None)
-            st.session_state.voice_epoch = st.session_state.get("voice_epoch", 0) + 1
-        st.subheader("Voice conversation")
-        render_voice(filtered, target, chat_scope + str(st.session_state.get("voice_epoch", 0)), raw_df=query_data, data_bounds=data_bounds)
-        suggested = None
-        with st.expander("Suggested questions — start here", expanded=True):
-            topic = st.radio("Analysis topic", ["Quick answers", "Comparisons", "Scenarios and charts", "Trends", "Operational opportunities"], horizontal=True)
-            choices = (SCENARIO_QUESTIONS if topic == "Scenarios and charts" else COMPARISON_QUESTIONS if topic == "Comparisons" else SUGGESTIONS[:4] if topic == "Quick answers"
-                       else SUGGESTIONS[4:7] if topic == "Trends" else SUGGESTIONS[7:])
-            question_columns = st.columns(2)
-            for index, prompt in enumerate(choices):
-                if question_columns[index % 2].button(prompt, key="suggest_" + prompt, width="stretch"):
-                    suggested = prompt
-        question = st.chat_input("Ask about capacity or a provider, or enter a year (e.g. 2023)")
-        pending_follow_up = st.session_state.pop("pending_follow_up", None)
-        if question or suggested or pending_follow_up:
-            prompt = question or suggested or pending_follow_up
-            response = respond(prompt, filtered, target, st.session_state.chat_history, raw_df=query_data, data_bounds=data_bounds)
-            st.session_state.chat_history.extend([
-                {"role": "user", "text": prompt}, {"role": "assistant", **response}])
-            st.session_state.chat_history = st.session_state.chat_history[-40:]
-        # Reverse exchanges only; retain chronological history for follow-ups.
-        history = st.session_state.chat_history
-        display_messages = [message for start in reversed(range(0, len(history), 2))
-                            for message in history[start:start + 2]]
-        if display_messages:
-            st.caption("Newest conversation first")
-        for display_index, message in enumerate(display_messages):
-            with st.chat_message(message["role"]):
-                st.markdown(message["text"])
-                if message["role"] == "assistant":
-                    if message.get("query_plan"):
-                        with st.expander("How this answer was calculated"):
-                            st.json(message["query_plan"])
-                    if message.get("calculated_result") and display_index == 1:
-                        st.caption("Optional AI explanation sends only verified synthetic calculated results, never chat history. Numbers remain Python-calculated.")
-                        if st.button("Explain this result with AI", disabled=("uploaded_data" in st.session_state or not configuration_ready()), key="explain_latest_plan"):
-                            try:
-                                with st.spinner("Explaining calculated results…"):
-                                    message["ai_explanation"] = explain_plan(message["query_plan"], filtered, query_data, data_bounds, target)
-                            except CopilotError as exc:
-                                st.error(str(exc))
-                    if message.get("ai_explanation"):
-                        st.caption(message["ai_explanation"]["mode"])
-                        st.markdown(message["ai_explanation"]["text"])
-                    if message.get("analytical_state"):
-                        with st.expander("Analytical memory"):
-                            st.json({k:v for k,v in message["analytical_state"].items() if k != "scope"})
-                    if message.get("chart") is not None:
-                        st.plotly_chart(message["chart"], width="stretch", key=f"chat_chart_{display_index}")
-                    st.caption(message.get("grounding", "Grounding: no metrics calculated") + " · " + message["status"])
-                    if display_index == 1:
-                        follow_columns = st.columns(3)
-                        for index, item in enumerate(message.get("follow_ups", [])):
-                            if follow_columns[index].button(item["label"], key="follow_" + item["label"]):
-                                st.session_state.pending_follow_up = item["question"]
-                                st.rerun()
+        text_area, voice_area = st.tabs(["GenAI / text chat", "Voice conversation"])
+        with voice_area:
+            st.subheader("Voice conversation")
+            st.caption("A separate conversation with its own memory. Start voice, speak, then pause for an answer.")
+            render_voice(filtered, target, chat_scope, raw_df=query_data, data_bounds=data_bounds)
+            with st.expander("Voice chat history"):
+                voice_history = st.session_state.get("voice_history", [])
+                if not voice_history:
+                    st.caption("No voice messages yet.")
+                for start in reversed(range(0, len(voice_history), 2)):
+                    for message in voice_history[start:start + 2]:
+                        with st.chat_message(message["role"]):
+                            st.markdown(message["text"])
+        with text_area:
+            st.subheader("Ask a question")
+            st.caption("Type a question or choose an example. Text and voice histories are kept separate. Optional AI explanations are available on supported answers.")
+            if st.button("Clear chat", key="clear_text_chat", help="Clear only the text conversation. Voice chat is kept separately."):
+                st.session_state.chat_history = []
+                st.session_state.pop("pending_follow_up", None)
+            with st.expander("Explore supported metrics and examples"):
+                st.dataframe(pd.DataFrame(catalog_records()), hide_index=True, width="stretch")
+                st.caption("A deterministic parser creates an allowlisted metric/dimension/date plan. Specialized comparisons, trends and scenarios retain their existing routes.")
+                for example in SEMANTIC_QUESTIONS:
+                    st.code(example, language=None)
+            suggested = None
+            with st.expander("Suggested questions — start here", expanded=False):
+                topic = st.radio("Analysis topic", ["Quick answers", "Comparisons", "Scenarios and charts", "Trends", "Operational opportunities"], horizontal=True)
+                choices = (SCENARIO_QUESTIONS if topic == "Scenarios and charts" else COMPARISON_QUESTIONS if topic == "Comparisons" else SUGGESTIONS[:4] if topic == "Quick answers"
+                           else SUGGESTIONS[4:7] if topic == "Trends" else SUGGESTIONS[7:])
+                question_columns = st.columns(2)
+                for index, prompt in enumerate(choices):
+                    if question_columns[index % 2].button(prompt, key="suggest_" + prompt, width="stretch"):
+                        suggested = prompt
+            question = st.chat_input("Ask about capacity or a provider, or enter a year (e.g. 2023)")
+            pending_follow_up = st.session_state.pop("pending_follow_up", None)
+            if question or suggested or pending_follow_up:
+                prompt = question or suggested or pending_follow_up
+                response = respond(prompt, filtered, target, st.session_state.chat_history, raw_df=query_data, data_bounds=data_bounds)
+                st.session_state.chat_history.extend([
+                    {"role": "user", "text": prompt}, {"role": "assistant", **response}])
+                st.session_state.chat_history = st.session_state.chat_history[-40:]
+            # Reverse exchanges only; retain chronological history for follow-ups.
+            history = st.session_state.chat_history
+            display_messages = [message for start in reversed(range(0, len(history), 2))
+                                for message in history[start:start + 2]]
+            if display_messages:
+                st.caption("Newest conversation first")
+            for display_index, message in enumerate(display_messages):
+                with st.chat_message(message["role"]):
+                    st.markdown(message["text"])
+                    if message["role"] == "assistant":
+                        if message.get("query_plan"):
+                            with st.expander("How this answer was calculated"):
+                                st.json(message["query_plan"])
+                        if message.get("calculated_result") and display_index == 1:
+                            st.caption("Optional AI explanation sends only verified synthetic calculated results, never chat history. Numbers remain Python-calculated.")
+                            if st.button("Explain this result with AI", disabled=("uploaded_data" in st.session_state or not configuration_ready()), key="explain_latest_plan"):
+                                try:
+                                    with st.spinner("Explaining calculated results…"):
+                                        message["ai_explanation"] = explain_plan(message["query_plan"], filtered, query_data, data_bounds, target)
+                                except CopilotError as exc:
+                                    st.error(str(exc))
+                        if message.get("ai_explanation"):
+                            st.caption(message["ai_explanation"]["mode"])
+                            st.markdown(message["ai_explanation"]["text"])
+                        if message.get("analytical_state"):
+                            with st.expander("Analytical memory"):
+                                st.json({k:v for k,v in message["analytical_state"].items() if k != "scope"})
+                        if message.get("chart") is not None:
+                            st.plotly_chart(message["chart"], width="stretch", key=f"chat_chart_{display_index}")
+                        st.caption(message.get("grounding", "Grounding: no metrics calculated") + " · " + message["status"])
+                        if display_index == 1:
+                            follow_columns = st.columns(3)
+                            for index, item in enumerate(message.get("follow_ups", [])):
+                                if follow_columns[index].button(item["label"], key="follow_" + item["label"]):
+                                    st.session_state.pending_follow_up = item["question"]
+                                    st.rerun()
     with st.expander("Metric definitions and assumptions"):
         st.markdown("""
         - **Utilization:** completed visits ÷ available appointment slots; all rollups use weighted totals.

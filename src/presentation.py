@@ -66,6 +66,40 @@ def apply_style():
     .tab-page-heading p {color: #5A6982; font-size: 1rem; line-height: 1.5; margin: 0; max-width: 700px;}
     [data-testid="stExpander"] {background: #FFFFFF; border: 1px solid #E4E8F0; border-radius: 12px;}
     [data-testid="stExpander"] summary {min-height: 48px;}
+    /* The dashboard-wide context control is deliberately more prominent than
+       secondary expanders because it changes every view on the page. */
+    .st-key-view_filters {margin: 14px 0 26px;}
+    .st-key-view_filters [data-testid="stExpander"] {
+      background: #FFFFFF; border: 1px solid #B8C9EB; border-radius: 14px;
+      box-shadow: 0 5px 16px #183A7610; overflow: hidden;
+    }
+    .st-key-view_filters [data-testid="stExpander"] summary {
+      background: linear-gradient(90deg, #EAF1FF 0%, #F8FAFF 100%);
+      border-left: 4px solid #1E4FAF; color: #173C88; font-size: 1.05rem;
+      font-weight: 750; letter-spacing: -.01em; min-height: 58px; padding: 0 18px;
+    }
+    .st-key-view_filters [data-testid="stExpander"] summary:hover {background: #E2ECFF;}
+    .st-key-view_as_control, .st-key-reporting_period_control {
+      background: #F9FBFF; border: 1px solid #D6E1F3; border-radius: 12px;
+      min-height: 208px; padding: 18px;
+    }
+    .st-key-view_as_control h5, .st-key-reporting_period_control h5 {
+      color: #1B407F; font-size: 1.02rem; font-weight: 780; letter-spacing: -.01em; margin: 0 0 5px;
+    }
+    .st-key-view_as_control [data-testid="stWidgetLabel"] p,
+    .st-key-reporting_period_control [data-testid="stWidgetLabel"] p,
+    .st-key-date_range_control [data-testid="stWidgetLabel"] p {
+      color: #203A69; font-size: 1rem; font-weight: 760;
+    }
+    .st-key-view_as_control [data-baseweb="select"] > div,
+    .st-key-reporting_period_control [data-baseweb="select"] > div {
+      background: #FFFFFF; border-color: #91ADD9; min-height: 46px;
+    }
+    .st-key-date_range_control {
+      background: #EAF1FF; border-left: 3px solid #2F6BFF; border-radius: 8px;
+      margin-top: 14px; padding: 12px 14px 8px;
+    }
+    .st-key-date_range_control [data-baseweb="input"] > div {background: #FFFFFF; border-color: #91ADD9; min-height: 42px;}
     [data-testid="stChatMessage"] {background: #FFFFFF; border: 1px solid #E4DFF0;
       border-radius: 16px; padding: 20px; line-height: 1.65;}
     [data-testid="stChatInput"] {border: 1px solid #A99AC4; border-radius: 14px;}

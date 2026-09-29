@@ -146,40 +146,44 @@ if postgres_configured():
     st.caption("Data source: PostgreSQL aggregate provider-day tables. No patient-level records are stored.")
 revision = st.session_state.get('dataset_revision', 0)
 context_summary = st.empty()
-with st.expander("Adjust view & filters", expanded=True):
+with st.container(key="view_filters"):
+  with st.expander("Adjust View & Filters — reporting period, access, and team", expanded=True):
     st.markdown("### 1. Set your reporting context")
     access, period_controls = st.columns([1, 1.6], gap="large")
     with access:
-        st.markdown("##### Viewing access")
-        profiles = demo_profiles(df)
-        profile_by_key = {profile.key: profile for profile in profiles}
-        selected_profile_key = st.selectbox(
-            "View as",
-            options=list(profile_by_key),
-            format_func=lambda key: profile_by_key[key].label,
-            key="demo_access_profile",
-            help="Changes the in-memory aggregate data scope used by this demo.",
-        )
-        active_profile = profile_by_key[selected_profile_key]
-        df = scope_data(df, active_profile)
-        st.caption(scope_description(active_profile, len(df)))
-        st.caption("Demo selector only — production access requires authenticated, server-enforced roles.")
+        with st.container(key="view_as_control"):
+            st.markdown("##### Viewing access")
+            profiles = demo_profiles(df)
+            profile_by_key = {profile.key: profile for profile in profiles}
+            selected_profile_key = st.selectbox(
+                "View as",
+                options=list(profile_by_key),
+                format_func=lambda key: profile_by_key[key].label,
+                key="demo_access_profile",
+                help="Changes the in-memory aggregate data scope used by this demo.",
+            )
+            active_profile = profile_by_key[selected_profile_key]
+            df = scope_data(df, active_profile)
+            st.caption(scope_description(active_profile, len(df)))
+            st.caption("Demo selector only — production access requires authenticated, server-enforced roles.")
     with period_controls:
-        st.markdown("##### Reporting period")
-        st.caption("Choose the dates for this analysis.")
-        period = st.selectbox("Reporting period", ["All available data" if "uploaded_data" in st.session_state else "All five years", "Latest calendar year", "Latest two calendar years", "Custom dates"], index=1)
-        range_end = df.date.max().date()
-        range_start = df.date.min().date()
-        if period == "Latest calendar year":
-            range_start = pd.Timestamp(range_end.year, 1, 1).date()
-        elif period == "Latest two calendar years":
-            range_start = pd.Timestamp(range_end.year - 1, 1, 1).date()
-        range_start = max(range_start, df.date.min().date())
-        # The widget alone owns its value. Each preset has a distinct range widget,
-        # avoiding conflicting session-state writes and preserving range-mode typing.
-        dates = st.date_input("Date range", value=(range_start, range_end),
-                             min_value=df.date.min().date(), max_value=df.date.max().date(),
-                             key=f"report_dates_{revision}_{period}")
+        with st.container(key="reporting_period_control"):
+            st.markdown("##### Reporting period")
+            st.caption("Choose the dates for this analysis.")
+            period = st.selectbox("Reporting period", ["All available data" if "uploaded_data" in st.session_state else "All five years", "Latest calendar year", "Latest two calendar years", "Custom dates"], index=1)
+            range_end = df.date.max().date()
+            range_start = df.date.min().date()
+            if period == "Latest calendar year":
+                range_start = pd.Timestamp(range_end.year, 1, 1).date()
+            elif period == "Latest two calendar years":
+                range_start = pd.Timestamp(range_end.year - 1, 1, 1).date()
+            range_start = max(range_start, df.date.min().date())
+            # The widget alone owns its value. Each preset has a distinct range widget,
+            # avoiding conflicting session-state writes and preserving range-mode typing.
+            with st.container(key="date_range_control"):
+                dates = st.date_input("Date range", value=(range_start, range_end),
+                                     min_value=df.date.min().date(), max_value=df.date.max().date(),
+                                     key=f"report_dates_{revision}_{period}")
     st.divider()
     st.markdown("### 2. Refine the team")
     st.caption("Select specialties and clinics first, then choose the providers you want to compare. Each selector stays open while you make multiple choices.")

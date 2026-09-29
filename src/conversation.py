@@ -120,6 +120,8 @@ def _respond(question, df, target=.85, history=None, as_of=None, raw_df=None, da
     # Patient counts are aggregate operations data, not patient-level requests.
     # Keep other safety categories separate from patient-specific information.
     blocked_patterns = [
+        r'\btreat\s+(?:missing|unknown|null|blank)\s+(?:data|values?|metrics?)\s+as\s+zero\b',
+        r'\bwhich\s+provider\s+is\s+worst\b',
         r'ignore|invent|pretend|system prompt|api.key|diagnos|treat|medication|ssn|date of birth',
         r'\b(?:fire|fired|firing|terminate|terminated|terminating|termination)\b',
         r'\b(?:prescri\w*|dosage|dose|clinical advice)\b',
@@ -129,7 +131,11 @@ def _respond(question, df, target=.85, history=None, as_of=None, raw_df=None, da
         r'\bwho\b.*\bpatients?\b',
     ]
     if any(re.search(pattern, q) for pattern in blocked_patterns):
-        if re.search(r'\b(?:fire|fired|firing|terminate|terminated|terminating|termination)\b', q):
+        if re.search(r'\btreat\s+(?:missing|unknown|null|blank)\s+(?:data|values?|metrics?)\s+as\s+zero\b', q):
+            reason = 'I cannot treat missing data as zero. Missing operational measures remain unavailable so the dashboard does not fabricate a denominator, rate, or revenue figure.'
+        elif re.search(r'\bwhich\s+provider\s+is\s+worst\b', q):
+            reason = 'I cannot label a provider as worst from operational metrics. Ask about a specific measured metric, such as utilization, no-show rate, or unused capacity.'
+        elif re.search(r'\b(?:fire|fired|firing|terminate|terminated|terminating|termination)\b', q):
             reason = 'Operational metrics cannot justify employment decisions. I cannot recommend firing or terminating someone.'
         elif re.search(r'diagnos|treat|medication|prescri|dosage|\bdose\b|clinical advice', q):
             reason = 'This dashboard contains operational metrics, not clinical evidence. I cannot provide clinical advice or patient-level clinical information.'

@@ -71,10 +71,10 @@ def test_missing_key_timeout(monkeypatch):
     assert 'fake-secret' not in str(err.value)
 
 
-def test_ui_preview_staleness(monkeypatch):
+def test_ui_generated_brief_staleness(monkeypatch):
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / 'app.py', default_timeout=30).run()
-    next(b for b in app.button if b.label == 'Preview calculated brief').click().run()
+    next(b for b in app.button if b.label == 'Generate AI Executive Brief').click().run()
     assert not app.exception
     assert any(s.value == 'Strongest performance' for s in app.subheader)
     assert not next(b for b in app.button if b.label == 'Generate AI Executive Brief').disabled

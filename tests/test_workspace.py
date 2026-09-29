@@ -115,7 +115,7 @@ def test_formula_explanations_do_not_claim_data_grounding(data,question,expected
 def test_workspace_ui_selection_and_summary_invalidation():
     app=AppTest.from_file(Path(__file__).resolve().parents[1]/'app.py',default_timeout=30).run()
     assert not app.exception
-    assert any(t.label=='Executive workspace' for t in app.tabs)
+    assert any(t.label=='Executive Center' for t in app.tabs)
     next(b for b in app.button if b.label=='Generate Executive Summary').click().run()
     assert 'Overall utilization' in app.session_state.workspace_summary['text']
     prior_key=app.session_state.workspace_summary['key']

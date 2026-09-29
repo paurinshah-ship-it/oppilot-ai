@@ -28,7 +28,9 @@ def interpret_query(question, today, bounds, roster):
     if re.search(r'\b(why|improving|decreased|increased|dropped|forecast|predict)\b|what.if|compare with', q) or (chart_words and not chart_candidate):
         return None
     # These forms select the compositional route; existing conversational intents remain compatible.
-    if not (re.search(r'\bby\b',q) or q.startswith(('show ', 'total ', 'calculate ')) or any(k in q for k in METRICS if '_' in k)):
+    if not (re.search(r'\bby\b',q) or q.startswith(('show ', 'total ', 'calculate '))
+            or re.search(r'\bwhich\s+provider\b.*\butilization\b', q)
+            or q.startswith('what ') and re.search(r'\bcollections\b', q)):
         return None
     parsed = parse_date_range(q,today,*bounds)
     residual = parsed['remaining_question']
@@ -52,7 +54,7 @@ def interpret_query(question, today, bounds, roster):
             dimensions.append(key)
             residual = re.sub(pattern,' ',residual)
     order = 'desc' if re.search(r'\b(highest|most|largest|descending)\b',residual) else 'asc' if re.search(r'\b(lowest|least|ascending)\b',residual) else None
-    residual = re.sub(r'\b(show|me|the|our|total|calculate|what|is|are|and|by|for|in|during|period|available|across|per|compare|which|has|have|with|highest|most|largest|lowest|least|ascending|descending|order|rank|trend|trends|chart|plot)\b|[, &]', ' ',residual)
+    residual = re.sub(r'\b(show|me|the|our|total|calculate|what|was|is|are|and|by|for|in|during|period|available|across|per|compare|which|has|have|had|with|highest|most|largest|lowest|least|ascending|descending|order|rank|trend|trends|chart|plot)\b|[, &]', ' ',residual)
     if error or residual.strip():
         error = error or 'I could not resolve all requested filters or qualifiers. Use catalog metrics with provider, clinic, specialty or month dimensions.'
     if order and len(metrics)>1:

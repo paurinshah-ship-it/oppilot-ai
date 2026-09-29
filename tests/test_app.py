@@ -43,10 +43,18 @@ def test_app_and_empty_filters():
     assert not app.exception
     assert len(app.metric) == 7
     assert next(w for w in app.selectbox if w.label == "Reporting period").value == "Latest calendar year"
-    assert [tab.label for tab in app.tabs][:2] == ["Overview", "Ask copilot"]
+    assert [tab.label for tab in app.tabs][:2] == ["Overview", "Ask Copilot"]
     next(w for w in app.multiselect if w.label == "Select specialties").set_value([]).run()
     assert not app.exception
     assert any("No data" in message.value for message in app.info)
+
+
+def test_team_selector_dialog_opens_without_filter_state_conflict():
+    """The persistent selector must not reuse a widget key owned by the main page."""
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run(timeout=30)
+    next(button for button in app.button if button.label == "Open specialty selector").click().run(timeout=30)
+    assert len(app.get("dialog")) == 1
+    assert not app.exception
 
 def test_filters_target_and_chat():
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run(timeout=30)

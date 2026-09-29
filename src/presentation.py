@@ -7,7 +7,8 @@ def apply_style():
     <style>
     .stApp {background: #F6F7FB;}
     /* Clear Streamlit's fixed toolbar so the compact header is fully visible. */
-    .block-container {padding: 3.25rem 1.75rem 2.5rem; max-width: 1680px;}
+    /* Leave room below Streamlit's top toolbar so the right-side header copy is never clipped. */
+    .block-container {padding: 3.5rem 2.25rem 2.5rem; max-width: 1720px;}
     h1 {letter-spacing: -1px; font-weight: 750;}
     h3 {letter-spacing: -.35px; font-size: 1.25rem;}
     [data-testid="stMetric"] {background: #FFFFFF; border: 1px solid #E7EAF1;
@@ -38,12 +39,12 @@ def apply_style():
     [role="tablist"] {gap: 20px; background: transparent; padding: 0 4px; border-radius: 0; border-bottom: 1px solid #DEE4EE;}
     [role="tab"] {border-radius: 0; padding: 12px 2px 10px; border-bottom: 3px solid transparent;}
     [role="tab"][aria-selected="true"] {background: transparent; color: #2453D4; font-weight: 700; border: 0; border-bottom: 3px solid #2F6BFF; box-shadow: none;}
-    .executive-header {background: #FFFFFF; border: 1px solid #E2E7F0;
-      padding: 15px 20px; border-radius: 14px; color: #17233D; margin-bottom: 10px;
+    .executive-header {background: transparent; border: 0;
+      padding: 6px 0 12px; border-radius: 0; color: #17233D; margin-bottom: 0;
       display: flex; align-items: center; justify-content: space-between; gap: 18px;}
     .executive-header .eyebrow {font-size: 10px; letter-spacing: 1.6px; color: #5E6E8A;}
-    .executive-header h1 {font-size: 23px; color: #17233D; padding: 3px 0; margin: 0;}
-    .executive-header p {color: #5E6E8A; margin: 0; font-size: 14px; text-align: right;}
+    .executive-header h1 {font-size: 22px; color: #17233D; padding: 3px 0; margin: 0;}
+    .executive-header p {color: #5E6E8A; margin: 0; font-size: 13px; text-align: right;}
     /* Readable text, generous targets, and visible keyboard focus across the UI. */
     [data-testid="stCaptionContainer"] {color: #595267; font-size: .95rem; line-height: 1.6;}
     [data-testid="stWidgetLabel"] p {font-size: 1rem; font-weight: 600;}
@@ -54,20 +55,60 @@ def apply_style():
       outline: 3px solid #594299 !important; outline-offset: 3px;
     }
     [role="tablist"] {flex-wrap: wrap; overflow: visible; height: auto; gap: 8px;}
-    [role="tab"] {min-height: 44px; height: auto; color: #4D435F;}
+    [role="tab"] {min-height: 46px; height: auto; color: #35425B; font-size: 1rem;
+      font-weight: 650; letter-spacing: .005em; padding: 12px 8px 10px;}
+    [role="tab"][aria-selected="true"] {color: #194FC3;}
     [data-testid="stExpander"] {background: #FFFFFF; border: 1px solid #E4E8F0; border-radius: 12px;}
     [data-testid="stExpander"] summary {min-height: 48px;}
     [data-testid="stChatMessage"] {background: #FFFFFF; border: 1px solid #E4DFF0;
       border-radius: 16px; padding: 20px; line-height: 1.65;}
     [data-testid="stChatInput"] {border: 1px solid #A99AC4; border-radius: 14px;}
-    .st-key-dashboard_filters {background: #FFFFFF; border-radius: 16px;}
-    .priority-panel {background: linear-gradient(100deg, #EEF4FF, #F7F9FF); border: 1px solid #D7E3FF;
-      border-radius: 14px; padding: 18px 20px; margin: 18px 0 8px; color: #213657;}
-    .priority-panel .priority-title {font-size: 1rem; font-weight: 750; color: #2147A9; margin-bottom: 8px;}
-    .priority-panel ul {margin: 0; padding-left: 20px; line-height: 1.7;}
-    .priority-panel .priority-note {font-size: .87rem; color: #5E6E8A; margin-top: 8px;}
+    .context-strip {display: grid; grid-template-columns: 1fr 1.4fr 1.4fr; align-items: center;
+      gap: 20px; min-height: 62px; padding: 10px 0 12px; margin-bottom: 12px;
+      border-top: 1px solid #E0E6EF; border-bottom: 1px solid #E0E6EF; color: #263653;}
+    .context-strip > div {min-width: 0;}
+    .context-label {display: block; color: #6C7890; font-size: .72rem; font-weight: 750;
+      letter-spacing: .07em; margin-bottom: 2px; text-transform: uppercase;}
+    .context-strip strong {display: block; font-size: .91rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+    .dashboard-section-kicker {color: #69758B; font-size: .78rem; font-weight: 800;
+      letter-spacing: .09em; margin: 22px 0 7px; text-transform: uppercase;}
+    .st-key-operations_copilot {background: linear-gradient(100deg, #EFF5FF 0%, #F7F9FF 100%);
+      border: 1px solid #D9E4FA; border-radius: 14px; padding: 20px 22px 18px; margin: 20px 0 8px;}
+    .operations-copilot-heading {display: flex; align-items: end; justify-content: space-between;
+      gap: 16px; padding-bottom: 13px; margin-bottom: 14px; border-bottom: 1px solid #D8E3F7;}
+    .operations-copilot-heading h2 {color: #1C315A; font-size: 1.2rem; letter-spacing: -.02em; margin: 2px 0 0;}
+    .operations-copilot-heading p {color: #60708B; font-size: .88rem; margin: 0; text-align: right;}
+    .copilot-mark {color: #2F6BFF; font-size: 1rem; margin-right: 7px;}
+    .copilot-eyebrow {color: #3156AA; font-size: .76rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;}
+    .st-key-operations_copilot h5 {color: #31466D; font-size: .82rem; font-weight: 800; letter-spacing: .035em; margin: 0 0 7px; text-transform: uppercase;}
+    .st-key-operations_copilot [data-testid="stMarkdownContainer"] p {color: #273752; line-height: 1.5; min-height: 48px;}
+    .st-key-operations_copilot .stButton button {background: transparent; border: 1px solid #B9C9E9; color: #244EA8; min-height: 38px; padding: 4px 12px;}
+    .st-key-text_chat_help {margin: 26px 0 5.5rem;}
+    .st-key-provider_comparison_shell {padding: 4px 0 8px;}
+    .st-key-provider_comparison_shell [role="tablist"] {margin: 14px 0 8px; gap: 22px;}
+    .st-key-provider_comparison_shell [role="tab"] {font-size: .95rem;}
+    .st-key-comparison_drilldown {background: #FFFFFF; border-top: 1px solid #DEE5EF;
+      margin-top: 26px; padding: 22px 0 0;}
+    .st-key-comparison_drilldown h4 {color: #24385F; margin-bottom: 2px;}
+    .drilldown-stat {border-left: 2px solid #98B6F8; padding: 6px 0 6px 12px; margin: 8px 0 14px;}
+    .drilldown-stat span {color: #64738E; display: block; font-size: .79rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;}
+    .drilldown-stat strong {color: #1D3158; display: block; font-size: 1.3rem; margin-top: 2px;}
+    .st-key-executive_center_shell [role="tablist"] {margin: 14px 0 12px; gap: 22px;}
+    .st-key-executive_center_shell [role="tab"] {font-size: .95rem;}
+    .st-key-executive_center_shell h4 {color: #24385F; margin-bottom: 3px;}
+    .st-key-refinement_view [role="radiogroup"] {display: flex; flex-wrap: wrap; gap: 8px;}
+    .st-key-refinement_view label {background: #FFFFFF; border: 1px solid #D8E0EC; border-radius: 8px;
+      margin: 0; min-height: 38px; padding: 7px 14px;}
+    /* The calculation widgets retain the established filter state for the app
+       and automated coverage. Selection happens in the persistent dialogs. */
+    div.stVerticalBlock.st-key-team_filter_state {
+      position: absolute !important; width: 1px !important; height: 1px !important;
+      margin: 0 !important; overflow: hidden !important; opacity: 0 !important;
+      pointer-events: none !important;
+    }
     .overview-section-title {font-size: 1.1rem; font-weight: 750; color: #1D2C49; margin: 24px 0 4px;}
     .overview-section-note {font-size: .91rem; color: #61708B; margin-bottom: 8px;}
+    [data-testid="stDataFrame"] {border: 1px solid #E0E6F0; border-radius: 12px; overflow: hidden;}
     @media (max-width: 760px) {
       .block-container {padding: 1rem;}
       .executive-header {padding: 16px; display: block;}
@@ -75,6 +116,9 @@ def apply_style():
       .executive-header p {text-align: left; margin-top: 6px;}
       [role="tab"] {padding: 10px;}
       [data-testid="stMetricValue"] {overflow-wrap: anywhere; white-space: normal;}
+      .context-strip {grid-template-columns: 1fr; gap: 9px; padding: 12px 0;}
+      .operations-copilot-heading {display: block;}
+      .operations-copilot-heading p {text-align: left; margin-top: 6px;}
     }
     </style>
     """, unsafe_allow_html=True)
@@ -83,8 +127,8 @@ def apply_style():
 def header():
     st.markdown("""
     <div class="executive-header">
-      <div><h1>Provider Performance Copilot</h1></div>
-      <p>Selected-team analytics<br>and operational priorities</p>
+      <div><div class="eyebrow">HEALTHCARE OPERATIONS INTELLIGENCE</div><h1>Provider Performance Copilot</h1></div>
+      <p>Executive operations workspace<br>Performance, capacity, and opportunity</p>
     </div>
     """, unsafe_allow_html=True)
     st.caption("UPLOADED AGGREGATES · User confirmed non-PHI · Local analytics" if "uploaded_data" in st.session_state else "SYNTHETIC DEMO · Portfolio Project · Fictional providers · No patient data or PHI")

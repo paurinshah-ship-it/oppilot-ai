@@ -35,10 +35,13 @@ def apply_style():
       color: #253554; font-size: clamp(1.05rem, 1.55vw, 1.45rem);
       font-weight: 750; letter-spacing: -.04em; font-variant-numeric: tabular-nums;
     }
-    [data-testid="stTabs"] {margin-top: 20px;}
-    [role="tablist"] {gap: 20px; background: transparent; padding: 0 4px; border-radius: 0; border-bottom: 1px solid #DEE4EE;}
-    [role="tab"] {border-radius: 0; padding: 12px 2px 10px; border-bottom: 3px solid transparent;}
-    [role="tab"][aria-selected="true"] {background: transparent; color: #2453D4; font-weight: 700; border: 0; border-bottom: 3px solid #2F6BFF; box-shadow: none;}
+    [data-testid="stTabs"] {margin-top: 28px;}
+    [role="tablist"] {display: flex; gap: 8px; background: #EEF2F8; padding: 6px;
+      border: 1px solid #DCE4F0; border-radius: 14px; border-bottom: 1px solid #DCE4F0;}
+    [role="tab"] {border: 1px solid transparent; border-radius: 9px; padding: 11px 15px;
+      min-height: 48px; color: #3A4964; font-size: 1.02rem; font-weight: 700;}
+    [role="tab"][aria-selected="true"] {background: #1E4FAF; color: #FFFFFF; font-weight: 750;
+      border: 1px solid #1E4FAF; box-shadow: 0 4px 10px #1E4FAF2A;}
     .executive-header {background: transparent; border: 0;
       padding: 6px 0 12px; border-radius: 0; color: #17233D; margin-bottom: 0;
       display: flex; align-items: center; justify-content: space-between; gap: 18px;}
@@ -54,10 +57,13 @@ def apply_style():
     summary:focus-visible, [role="tab"]:focus-visible {
       outline: 3px solid #594299 !important; outline-offset: 3px;
     }
-    [role="tablist"] {flex-wrap: wrap; overflow: visible; height: auto; gap: 8px;}
-    [role="tab"] {min-height: 46px; height: auto; color: #35425B; font-size: 1rem;
-      font-weight: 650; letter-spacing: .005em; padding: 12px 8px 10px;}
-    [role="tab"][aria-selected="true"] {color: #194FC3;}
+    [role="tablist"] {flex-wrap: wrap; overflow: visible; height: auto;}
+    [role="tab"] {height: auto; letter-spacing: .005em;}
+    [data-testid="stTabs"] [data-testid="stTabPanel"] {padding-top: 26px;}
+    .tab-page-heading {display: flex; align-items: baseline; justify-content: space-between; gap: 20px;
+      margin: 0 0 22px; padding: 0 0 16px; border-bottom: 1px solid #DCE4F0;}
+    .tab-page-heading h2 {color: #162B50; font-size: clamp(1.45rem, 2vw, 1.8rem); letter-spacing: -.03em; margin: 0;}
+    .tab-page-heading p {color: #5A6982; font-size: 1rem; line-height: 1.5; margin: 0; max-width: 700px;}
     [data-testid="stExpander"] {background: #FFFFFF; border: 1px solid #E4E8F0; border-radius: 12px;}
     [data-testid="stExpander"] summary {min-height: 48px;}
     [data-testid="stChatMessage"] {background: #FFFFFF; border: 1px solid #E4DFF0;
@@ -115,6 +121,8 @@ def apply_style():
       .executive-header h1 {font-size: 26px;}
       .executive-header p {text-align: left; margin-top: 6px;}
       [role="tab"] {padding: 10px;}
+      .tab-page-heading {display: block;}
+      .tab-page-heading p {margin-top: 6px;}
       [data-testid="stMetricValue"] {overflow-wrap: anywhere; white-space: normal;}
       .context-strip {grid-template-columns: 1fr; gap: 9px; padding: 12px 0;}
       .operations-copilot-heading {display: block;}

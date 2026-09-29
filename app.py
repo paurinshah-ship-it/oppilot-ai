@@ -114,6 +114,14 @@ def sync_filter_widget(widget_key, selection_key):
     """Copy a test-compatible hidden control into the dialog's canonical state."""
     st.session_state[selection_key] = list(st.session_state[widget_key])
 
+
+def tab_intro(title, description):
+    """Shared visual hierarchy for the primary project areas; no business logic."""
+    st.markdown(
+        f'<div class="tab-page-heading"><h2>{html.escape(title)}</h2><p>{html.escape(description)}</p></div>',
+        unsafe_allow_html=True,
+    )
+
 try:
     source_revision = "postgres" if postgres_configured() else DATA_PATH.stat().st_mtime_ns
     df = read_data(source_revision)
@@ -293,6 +301,7 @@ with st.container():
         "Executive Center", "Scenarios", "Data & Reporting",
     ])
     with overview:
+        tab_intro("Overview", "Executive view of performance, capacity, opportunity, and the most important operational signals.")
         monthly = monthly_performance(filtered)
         priority_provider = p.sort_values("opportunity", ascending=False).iloc[0]
         unbooked = int((filtered.capacity - filtered.booked).sum())
@@ -359,6 +368,7 @@ with st.container():
         st.caption("Capacity represents slots in staffed sessions. Unused capacity includes unbooked slots and no-shows; leave days have no capacity.")
     with benchmarks:
         with st.container(key="provider_comparison_shell"):
+            tab_intro("Provider Comparison", "Compare selected providers across productivity, utilization, revenue, and peer context.")
             st.subheader("Provider comparison")
             st.caption("Compare selected providers on operational dimensions. Click a provider row to open its aggregate provider-day drill-down; no patient-level records are available.")
             comparison_rows = p[["provider", "specialty", "clinic", "visits", "capacity", "utilization", "visits_per_hour", "revenue", "unused_capacity", "opportunity"]].copy()
@@ -462,6 +472,7 @@ with st.container():
                         + (f" = {productivity:.2f} visits per staffed hour." if productivity is not None else ".")
                     )
     with opportunities:
+        tab_intro("Opportunities", "Review data-derived operational opportunities and the supporting metrics behind each one.")
         st.subheader("Executive insights")
         for insight in executive_insights(filtered, p, target):
             with st.container(border=True):
@@ -477,8 +488,10 @@ with st.container():
                          hide_index=True, width="stretch")
         st.download_button("Download opportunity analysis", detect_opportunities(p, target).to_csv(index=False), "synthetic_opportunities.csv", "text/csv")
     with scenarios:
+        tab_intro("Scenarios", "Model operational improvement assumptions using the selected team and reporting period.")
         render_scenarios(filtered, target)
     with reporting:
+        tab_intro("Data & Reporting", "Manage the synthetic data source, validate inputs, and prepare performance reporting.")
         st.subheader("Data source")
         st.caption("Manage the active synthetic demo or upload verified non-PHI provider-day aggregates without interrupting the operational overview.")
         render_data_controls()
@@ -486,6 +499,7 @@ with st.container():
         render_reporting(filtered, target, dates)
     with executive:
         with st.container(key="executive_center_shell"):
+            tab_intro("Executive Center", "Leadership-ready briefings, forecasts, priorities, and provider or specialty detail.")
             st.subheader("Executive Center")
             st.caption("A focused leadership workspace. Each view uses the selected team and reporting period, with calculations performed locally before any optional AI explanation.")
             brief_tab, outlook_tab, priorities_tab, detail_tab = st.tabs([
@@ -507,6 +521,7 @@ with st.container():
                 render_provider_and_specialty_detail(filtered, target)
 
     with copilot:
+        tab_intro("Ask Copilot", "Ask grounded operational questions about the selected team and reporting period.")
         st.subheader("Conversational operations copilot")
         st.caption("Local, rule-based analytics conversation. Answers use selected dashboard data; no chat text is sent to a model or external service. Please do not enter PHI.")
         chat_scope = hashlib.sha256((filtered.to_csv(index=False) + str(target)).encode()).hexdigest()

@@ -26,7 +26,7 @@ def test_table_contract_and_no_patient_fields():
         'provider': 'provider_id provider_name specialty_id clinic_name',
         'appointment': 'provider_id appointment_date available_slots booked_appointments no_shows',
         'performance': 'provider_id performance_date fte staffed_hours completed_visits realized_revenue',
-        'appointment_event': 'appointment_id provider_id appointment_date appointment_status modeled_revenue',
+        'appointment_event': 'appointment_id provider_id appointment_date appointment_status modeled_revenue practice_id appointment_type scheduled_at slot_duration_minutes payer_category',
         'organization': 'organization_id organization_name created_at',
         'region': 'region_id organization_id region_name region_code',
         'practice': 'practice_id region_id practice_name practice_code city state practice_type opening_date active',
@@ -71,7 +71,7 @@ def populated(db):
     db.execute("INSERT INTO practice VALUES (1, 1, 'Synthetic Practice', 'P1', 'Demo City', 'NY', 'ambulatory', '2021-01-01', true)")
     db.execute("INSERT INTO specialty VALUES (1, 'Primary Care')")
     db.execute("INSERT INTO provider (provider_id, provider_name, specialty_id, clinic_name) VALUES ('SYN-001', 'Fictional Provider', 1, 'North Clinic')")
-    db.execute("INSERT INTO appointment_event VALUES (1, 'SYN-001', '2025-01-02', 'completed', 100)")
+    db.execute("INSERT INTO appointment_event (appointment_id, provider_id, appointment_date, appointment_status, modeled_revenue) VALUES (1, 'SYN-001', '2025-01-02', 'completed', 100)")
     db.execute("INSERT INTO employee VALUES (1, 1, 'scheduler', 1, 20, '2021-01-01', NULL, 'active')")
     db.execute("INSERT INTO provider_capacity VALUES ('SYN-001', '2025-01-02', 8, 6, 20, 2, 0, 2)")
     db.execute("INSERT INTO staffing_daily VALUES (1, '2025-01-02', 'scheduler', 2, 2, 2, 0, 0, 0)")
@@ -85,19 +85,21 @@ def populated(db):
 def test_legacy_upgrade_preserves_rows_and_is_repeatable(db):
     # Recreate the exact pre-Phase-1A five-table structure: no new FK column.
     legacy_schema = '\n'.join(f'CREATE TABLE IF NOT EXISTS {t} ({TABLES[t]}\n);'
-                              for t in ('specialty', 'provider', 'appointment', 'performance', 'appointment_event'))
+                              for t in ('specialty', 'provider', 'appointment', 'performance'))
+    legacy_schema += "\nCREATE TABLE appointment_event (appointment_id BIGINT PRIMARY KEY, provider_id TEXT NOT NULL REFERENCES provider(provider_id), appointment_date DATE NOT NULL, appointment_status TEXT NOT NULL CHECK (appointment_status IN ('completed', 'no_show', 'cancelled')), modeled_revenue NUMERIC(12,2) NOT NULL CHECK (modeled_revenue >= 0));"
     db.execute(legacy_schema)
     db.execute("INSERT INTO specialty VALUES (1, 'Primary Care')")
     db.execute("INSERT INTO provider VALUES ('SYN-001', 'Fictional Provider', 1, 'North Clinic')")
     db.execute("INSERT INTO appointment VALUES ('SYN-001', '2025-01-02', 10, 8, 1)")
     db.execute("INSERT INTO performance VALUES ('SYN-001', '2025-01-02', 1, 8, 7, 700)")
     for i, status in enumerate(('completed', 'no_show', 'cancelled'), 1):
-        db.execute('INSERT INTO appointment_event VALUES (%s, %s, %s, %s, 0)', (i, 'SYN-001', '2025-01-02', status))
+        db.execute('INSERT INTO appointment_event (appointment_id, provider_id, appointment_date, appointment_status, modeled_revenue) VALUES (%s, %s, %s, %s, 0)', (i, 'SYN-001', '2025-01-02', status))
     before = {t: db.execute(f'SELECT * FROM {t} ORDER BY 1').fetchall() for t in LEGACY}
     db.execute(SCHEMA)
     db.execute(SCHEMA)
-    for t in LEGACY - {'provider'}:
+    for t in LEGACY - {'provider', 'appointment_event'}:
         assert db.execute(f'SELECT * FROM {t} ORDER BY 1').fetchall() == before[t]
+    assert db.execute('SELECT appointment_id, provider_id, appointment_date, appointment_status, modeled_revenue FROM appointment_event ORDER BY appointment_id').fetchall() == before['appointment_event']
     assert db.execute('SELECT provider_id, provider_name, specialty_id, clinic_name FROM provider').fetchall() == before['provider']
     assert db.execute('SELECT practice_id FROM provider').fetchone() == (None,)
     # Execute the same explicit-column legacy upsert used by the loader.
@@ -206,11 +208,11 @@ def test_boundary_dates_and_valid_categories(populated):
             db.execute('UPDATE ground_truth_anomaly SET severity = %s, expected_direction = %s', (severity, direction))
 
 
-def test_appointment_status_compatibility_and_documented_deferral(populated):
+def test_appointment_status_compatibility_and_expansion(populated):
     import psycopg
-    for status in ('completed', 'no_show', 'cancelled'):
+    for status in ('completed', 'no_show', 'cancelled', 'cancelled_patient', 'cancelled_provider', 'cancelled_practice', 'rescheduled'):
         populated.execute('UPDATE appointment_event SET appointment_status = %s', (status,))
-    for status in ('cancelled_patient', 'cancelled_provider', 'cancelled_practice', 'rescheduled', 'unknown'):
+    for status in ('unknown',):
         with pytest.raises(psycopg.errors.CheckViolation), populated.transaction():
             populated.execute('UPDATE appointment_event SET appointment_status = %s', (status,))
     doc = (Path(__file__).resolve().parents[1] / 'docs/architecture/enterprise-data-model.md').read_text()

@@ -19,11 +19,13 @@ EVENT_DIMENSIONS = {
     "clinic": ("p.clinic_name",),
     "month": ("DATE_TRUNC('month', e.appointment_date)::date",),
 }
+NO_SHOW_DENOMINATOR_STATUSES = ("completed", "no_show")
+NO_SHOW_DENOMINATOR_SQL = "e.appointment_status IN ('completed', 'no_show')"
 EVENT_METRICS = {
     "appointments": "COUNT(*)",
     "completed_visits": "COUNT(*) FILTER (WHERE e.appointment_status = 'completed')",
     "no_shows": "COUNT(*) FILTER (WHERE e.appointment_status = 'no_show')",
-    "no_show_rate": "COUNT(*) FILTER (WHERE e.appointment_status = 'no_show')::numeric / NULLIF(COUNT(*) FILTER (WHERE e.appointment_status <> 'cancelled'), 0)",
+    "no_show_rate": f"COUNT(*) FILTER (WHERE e.appointment_status = 'no_show')::numeric / NULLIF(COUNT(*) FILTER (WHERE {NO_SHOW_DENOMINATOR_SQL}), 0)",
     "revenue": "SUM(e.modeled_revenue) FILTER (WHERE e.appointment_status = 'completed')",
 }
 EVENT_FROM = """

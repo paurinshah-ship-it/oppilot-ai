@@ -1,4 +1,4 @@
-# OpPilot AI enterprise data model — Phases 1A–1C
+# OpPilot AI enterprise data model — Phases 1A–1D
 
 **Autonomous Healthcare Operations Intelligence**
 
@@ -7,7 +7,9 @@ synthetic reference generation and an explicit transactional loader. Phase 1C
 adds an independent employee/capacity/staffing baseline and bulk loader. Existing
 Streamlit UI, CSV contract, deterministic analytics, semantic allowlists, AI
 guardrails, scenarios and audit behavior are unchanged. No agents, jobs,
-new analytics or frontend integration are added.
+new analytics or frontend integration are added. Phase 1D adds a synthetic,
+event-grain scheduling fixture and a bulk loader; it does not change dashboard
+queries or existing Provider Performance calculations.
 
 ## Hierarchy and table responsibilities
 
@@ -38,7 +40,7 @@ use BIGSERIAL; existing provider IDs remain TEXT, including `SYN-001`.
 | `provider` | TEXT `provider_id`, name, specialty FK, required `clinic_name`, name/clinic uniqueness; only nullable `practice_id` added. |
 | `appointment` | Provider/date aggregates: capacity, bookings, no-shows; unchanged. |
 | `performance` | Provider/date aggregates: FTE, staffed hours, visits, realized revenue; unchanged. |
-| `appointment_event` | Optional scale fixture with appointment ID, provider/date, status and modeled revenue; columns, constraints and indexes unchanged. |
+| `appointment_event` | Optional event-grain fixture with the five legacy fields plus nullable practice, visit-type, booking-time, duration and payer fields. Expanded status constraint supports the Phase 1D catalog. |
 
 The dashboard still joins appointment and performance by provider/date, then
 provider and specialty. Clinics still use `provider.clinic_name`. Existing
@@ -99,21 +101,56 @@ specialty, payments by encounter/date, and anomalies by practice/start/end.
 The anomaly B-tree filters by practice/start then end; it is not a specialized
 interval-overlap index.
 
-## Appointment statuses: compatibility boundary
+## Appointment events and status compatibility
 
-Supported now: `completed`, `no_show`, legacy `cancelled`.
-Planned: `cancelled_patient`, `cancelled_provider`, `cancelled_practice`,
-`rescheduled`, alongside all three existing statuses.
-**Richer statuses remain rejected in Phase 1A.**
+`appointment_event` preserves the original five fields and their order:
+`appointment_id`, `provider_id`, `appointment_date`, `appointment_status`, and
+`modeled_revenue`. Phase 1D appends nullable `practice_id`, `appointment_type`,
+`scheduled_at`, `slot_duration_minutes`, and `payer_category`. Null additions
+keep legacy inserts and the original five-column scale loader valid. The event
+ID range begins above the existing 1–1,000,000 legacy scale-generator range.
 
-The current event no-show rate excludes only `cancelled` from its denominator.
-Expanding its CHECK alone would count the new cancellations/reschedules as
-eligible bookings and silently change analytics. A future migration must first
-define reschedule semantics, update event formulas/tests, and transactionally
-replace `appointment_event_appointment_status_check`. Merely changing CREATE
-TABLE IF NOT EXISTS would not upgrade that constraint on existing databases.
-The current generator and COPY loader remain untouched; no new million-row
-fixture is generated.
+The status constraint accepts `completed`, `no_show`, `cancelled`,
+`cancelled_patient`, `cancelled_provider`, `cancelled_practice`, and
+`rescheduled`. Legacy `cancelled` remains valid. The enterprise fixture divides
+the old 11% cancellation share among the four explicit cancellation/reschedule
+labels; the baseline weights remain 78% completed, 11% no-show, and 11% total
+cancellation/reschedule. These are synthetic assumptions, not measured rates.
+
+The scalable event-level no-show calculation uses visit outcomes as the
+denominator:
+
+```sql
+COUNT(*) FILTER (WHERE appointment_status = 'no_show')::numeric /
+NULLIF(COUNT(*) FILTER (
+  WHERE appointment_status IN ('completed', 'no_show')
+), 0)
+```
+
+Therefore `cancelled`, `cancelled_patient`, `cancelled_provider`,
+`cancelled_practice`, and `rescheduled` are excluded from the denominator. For
+legacy event data containing only `completed`, `no_show`, and `cancelled`, this
+produces the same result as the earlier `appointment_status <> 'cancelled'`
+expression. The dashboard's provider-day no-show and utilization calculations
+remain unchanged. The schema initializer transactionally replaces the old status
+CHECK because `CREATE TABLE IF NOT EXISTS` alone would leave existing
+installations with the three-status constraint.
+
+Appointment types are operational labels (`new_patient`, `follow_up`, `annual`,
+`procedure`, `consult`, `urgent`, `telehealth`) with specialty-specific weights.
+Payer categories are synthetic (`Commercial`, `Medicare`, `Medicaid`, `Self
+Pay`, `Other`). Scheduled timestamps use UTC and precede service date; urgent
+appointments have short lead times, follow-ups moderate lead times, and
+consults longer lead times. Slot durations are positive 15, 20, 30, 45, or 60
+minutes and are weighted by appointment type. Modeled revenue is nonnegative
+and appears only on completed events; it is not collections.
+
+Generation is deterministic for a fixed seed and streams up to one million
+events without holding them all in memory. The PostgreSQL loader COPYs to a
+temporary staging table, validates reference/provider-practice integrity,
+rejects conflicting existing IDs, and inserts missing rows in one transaction.
+Matching reruns are idempotent. It touches only `appointment_event`; encounter,
+payment, referral and anomaly generation are not part of this phase.
 
 ## Why appointments and encounters are separate
 

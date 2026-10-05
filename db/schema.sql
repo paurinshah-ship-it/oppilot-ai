@@ -80,9 +80,53 @@ CREATE TABLE IF NOT EXISTS appointment_event (
     appointment_id BIGINT PRIMARY KEY,
     provider_id TEXT NOT NULL REFERENCES provider(provider_id),
     appointment_date DATE NOT NULL,
-    appointment_status TEXT NOT NULL CHECK (appointment_status IN ('completed', 'no_show', 'cancelled')),
-    modeled_revenue NUMERIC(12,2) NOT NULL CHECK (modeled_revenue >= 0)
+    appointment_status TEXT NOT NULL,
+    modeled_revenue NUMERIC(12,2) NOT NULL CHECK (modeled_revenue >= 0),
+    practice_id BIGINT REFERENCES practice(practice_id),
+    appointment_type TEXT CHECK (appointment_type IS NULL OR appointment_type IN
+        ('new_patient', 'follow_up', 'annual', 'procedure', 'consult', 'urgent', 'telehealth')),
+    scheduled_at TIMESTAMPTZ,
+    slot_duration_minutes INTEGER CHECK (slot_duration_minutes IS NULL OR slot_duration_minutes IN (15, 20, 30, 45, 60)),
+    payer_category TEXT CHECK (payer_category IS NULL OR payer_category IN
+        ('Commercial', 'Medicare', 'Medicaid', 'Self Pay', 'Other'))
 );
+
+-- CREATE TABLE IF NOT EXISTS does not add the Phase 1D fields to legacy tables.
+ALTER TABLE appointment_event ADD COLUMN IF NOT EXISTS practice_id BIGINT REFERENCES practice(practice_id);
+ALTER TABLE appointment_event ADD COLUMN IF NOT EXISTS appointment_type TEXT
+    CHECK (appointment_type IS NULL OR appointment_type IN
+        ('new_patient', 'follow_up', 'annual', 'procedure', 'consult', 'urgent', 'telehealth'));
+ALTER TABLE appointment_event ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
+ALTER TABLE appointment_event ADD COLUMN IF NOT EXISTS slot_duration_minutes INTEGER
+    CHECK (slot_duration_minutes IS NULL OR slot_duration_minutes IN (15, 20, 30, 45, 60));
+ALTER TABLE appointment_event ADD COLUMN IF NOT EXISTS payer_category TEXT
+    CHECK (payer_category IS NULL OR payer_category IN
+        ('Commercial', 'Medicare', 'Medicaid', 'Self Pay', 'Other'));
+
+-- CREATE TABLE IF NOT EXISTS does not update the old three-status constraint.
+-- Replace old checks once; subsequent schema initialization avoids rescanning
+-- the event table or taking an unnecessary exclusive DDL lock.
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'appointment_event'::regclass
+          AND conname = 'appointment_event_appointment_status_check'
+          AND pg_get_constraintdef(oid) LIKE '%cancelled_patient%'
+    ) THEN
+        ALTER TABLE appointment_event DROP CONSTRAINT IF EXISTS appointment_event_appointment_status_check;
+        ALTER TABLE appointment_event ADD CONSTRAINT appointment_event_appointment_status_check
+            CHECK (appointment_status IN ('completed', 'no_show', 'cancelled', 'cancelled_patient',
+                                          'cancelled_provider', 'cancelled_practice', 'rescheduled'));
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'appointment_event'::regclass
+          AND conname = 'appointment_event_scheduled_before_service_check'
+    ) THEN
+        ALTER TABLE appointment_event ADD CONSTRAINT appointment_event_scheduled_before_service_check
+            CHECK (scheduled_at IS NULL OR scheduled_at < (appointment_date::timestamp AT TIME ZONE 'UTC'));
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS appointment_date_idx ON appointment (appointment_date);
 CREATE INDEX IF NOT EXISTS performance_date_idx ON performance (performance_date);
@@ -92,9 +136,10 @@ CREATE INDEX IF NOT EXISTS appointment_event_provider_date_idx
     ON appointment_event (provider_id, appointment_date, appointment_id);
 CREATE INDEX IF NOT EXISTS appointment_event_status_date_idx
     ON appointment_event (appointment_status, appointment_date);
-
--- Rich cancellation/reschedule statuses are deferred until event metric
--- denominators are migrated. Preserve completed, no_show, and legacy cancelled.
+CREATE INDEX IF NOT EXISTS appointment_event_practice_date_idx
+    ON appointment_event (practice_id, appointment_date);
+CREATE INDEX IF NOT EXISTS appointment_event_type_date_idx
+    ON appointment_event (appointment_type, appointment_date);
 
 CREATE TABLE IF NOT EXISTS employee (
     employee_id BIGSERIAL PRIMARY KEY,

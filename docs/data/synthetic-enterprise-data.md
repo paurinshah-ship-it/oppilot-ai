@@ -1,4 +1,4 @@
-# Synthetic enterprise data — Phases 1B–1C
+# Synthetic enterprise data — Phases 1B–1D
 
 OpPilot AI's reference fixture is entirely fictional. NorthStar Medical Group,
 practice names and provider identities are invented for operational analytics
@@ -371,3 +371,71 @@ OPPILOT_TEST_DATABASE_URL=postgresql://localhost/oppilot_test python -m pytest -
 As in previous phases, PostgreSQL tests require a disposable test database and
 otherwise explicitly skip. The existing synthetic-only/no-PHI policy applies;
 no personal or patient fields are present in these three exports.
+
+## Phase 1D appointment events
+
+The enterprise appointment generator uses the existing 150-provider, 25-practice,
+12-specialty reference fixture. It emits event IDs beginning at `2,000,001`, above
+the legacy scale generator's `1`–`1,000,000` range. The default is one million
+rows for January 1, 2024 through December 31, 2025; smaller counts and inclusive
+date windows are supported for development. Rows stream from a fixed-seed local
+random generator, so fixed inputs reproduce the same values without retaining
+the full dataset in memory. The legacy generator and its five-column CSV/COPY
+contract remain available unchanged.
+
+The five original event fields stay in their existing order:
+`appointment_id`, `provider_id`, `appointment_date`, `appointment_status`, and
+`modeled_revenue`. The five appended enterprise fields are nullable for old
+rows and old five-column inserts: `practice_id`, `appointment_type`,
+`scheduled_at`, `slot_duration_minutes`, and `payer_category`. Each generated
+provider/practice pair matches the reference hierarchy.
+
+Statuses include `completed`, `no_show`, legacy `cancelled`,
+`cancelled_patient`, `cancelled_provider`, `cancelled_practice`, and
+`rescheduled`. The illustrative baseline uses 78% completed, 11% no-show and
+11% total cancellation/reschedule weights; that final 11% is split across the
+four cancellation/reschedule labels. This preserves the aggregate synthetic
+weight model while adding operational detail. These are generated baseline
+assumptions, with no explicit anomaly injection. Existing no-show SQL is
+defined as `no_show / (completed + no_show)` for event-level analytics.
+`cancelled`, `cancelled_patient`, `cancelled_provider`, `cancelled_practice`,
+and `rescheduled` are excluded from the denominator. Legacy event datasets with
+only `completed`, `no_show`, and `cancelled` return the same rate as the older
+`appointment_status <> 'cancelled'` denominator.
+
+Appointment types use a specialty-weighted catalog: `new_patient`, `follow_up`,
+`annual`, `procedure`, `consult`, `urgent`, and `telehealth`. Payer categories
+are `Commercial`, `Medicare`, `Medicaid`, `Self Pay`, and `Other`; they describe
+synthetic categories, not contracts or people. Booking timestamps use UTC and
+lead time varies by type: urgent visits are booked 1–3 days ahead, follow-ups
+7–35 days, new/annual appointments 14–60 days, procedures 7–42 days, consults
+21–75 days, and telehealth 2–21 days. Service dates are weekdays and booking
+time always precedes service date. Slot durations are 15, 20, 30, 45, or 60
+minutes, sampled from appointment-type-specific choices.
+
+Modeled revenue remains a synthetic service-level amount, only for completed
+events; every other status has zero modeled revenue. It is not payment,
+collection, allowed amount, or a patient balance. No patient identifier, name,
+diagnosis, note, or other PHI is present.
+
+Export a deterministic CSV without loading one million rows into memory:
+
+```sh
+python scripts/generate_enterprise_appointment_events.py --output /tmp/enterprise-appointment-events.csv
+python scripts/generate_enterprise_appointment_events.py --output /tmp/appointment-sample.csv --count 10000
+```
+
+The output path must be new. A companion manifest records the count, seed,
+date window and status counts. To load into a disposable/development database
+after applying the schema and loading Phase 1B reference data:
+
+```sh
+python scripts/load_enterprise_appointment_events.py --count 10000
+```
+
+The loader COPYs generated rows to a temporary staging table and performs a
+set-based conflict check and insert inside one transaction. Identical reruns
+insert zero rows; an existing event ID with different generated values aborts
+the transaction. It preserves legacy event rows and does not touch provider-day
+facts or other operational tables. Table locks serialize competing writes, so
+large loads belong in a development database or a planned maintenance window.

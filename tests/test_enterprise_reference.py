@@ -196,7 +196,7 @@ def test_existing_specialty_ids_legacy_providers_and_facts_preserved(db):
     db.execute("INSERT INTO provider VALUES ('OTHER-1', 'Unrelated Provider', 1, 'Unrelated Clinic', NULL)")
     db.execute("INSERT INTO appointment VALUES ('SYN-001', '2025-01-02', 10, 8, 1)")
     db.execute("INSERT INTO performance VALUES ('SYN-001', '2025-01-02', 1, 8, 7, 700)")
-    db.execute("INSERT INTO appointment_event VALUES (1, 'SYN-001', '2025-01-02', 'completed', 100)")
+    db.execute("INSERT INTO appointment_event (appointment_id, provider_id, appointment_date, appointment_status, modeled_revenue) VALUES (1, 'SYN-001', '2025-01-02', 'completed', 100)")
     query = 'SELECT p.provider_id, p.provider_name, p.clinic_name, s.specialty_name, a.available_slots, pe.completed_visits, pe.realized_revenue ' + BASE_FROM
     before = db.execute(query).fetchall()
     facts = snapshot(db, FACT_TABLES)

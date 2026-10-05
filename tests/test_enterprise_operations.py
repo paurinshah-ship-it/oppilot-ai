@@ -297,7 +297,7 @@ def test_preserves_reference_legacy_and_unrelated_rows(ready, small):
                  'appointment_event', 'encounter', 'referral', 'payment', 'ground_truth_anomaly')
     ready.execute("INSERT INTO appointment VALUES ('SYN-001', '2025-01-02', 10, 8, 1)")
     ready.execute("INSERT INTO performance VALUES ('SYN-001', '2025-01-02', 1, 8, 7, 700)")
-    ready.execute("INSERT INTO appointment_event VALUES (1, 'SYN-001', '2025-01-02', 'completed', 100)")
+    ready.execute("INSERT INTO appointment_event (appointment_id, provider_id, appointment_date, appointment_status, modeled_revenue) VALUES (1, 'SYN-001', '2025-01-02', 'completed', 100)")
     ready.execute("INSERT INTO employee VALUES (42, 10001, 'Other role', 1, 20, '2020-01-01', NULL, 'active')")
     ready.execute("INSERT INTO provider_capacity VALUES ('SYN-001', '2023-01-01', 8, 7, 20, 0, 0, 1)")
     ready.execute("INSERT INTO staffing_daily VALUES (10001, '2023-01-01', 'RN', 2, 2, 2, 0, 0, 0)")

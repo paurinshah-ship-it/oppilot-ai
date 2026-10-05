@@ -11,6 +11,8 @@ def test_event_aggregate_is_grouped_and_parameterized():
         "no_show_rate", ("month", "specialty"), date(2025, 1, 1), date(2025, 12, 31), ("SYN-001",),
     ))
     assert "COUNT(*) FILTER" in query.sql
+    assert "e.appointment_status IN ('completed', 'no_show')" in query.sql
+    assert "e.appointment_status <> 'cancelled'" not in query.sql
     assert "GROUP BY DATE_TRUNC('month', e.appointment_date)::date, s.specialty_name" in query.sql
     assert "= ANY(:provider_ids)" in query.sql
     assert query.params["provider_ids"] == ["SYN-001"]

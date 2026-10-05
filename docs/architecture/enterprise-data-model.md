@@ -1,12 +1,13 @@
-# OpPilot AI enterprise data model — Phases 1A–1B
+# OpPilot AI enterprise data model — Phases 1A–1C
 
 **Autonomous Healthcare Operations Intelligence**
 
 Phase 1A established the PostgreSQL foundation. Phase 1B adds deterministic
-synthetic reference generation and an explicit transactional loader. Existing
+synthetic reference generation and an explicit transactional loader. Phase 1C
+adds an independent employee/capacity/staffing baseline and bulk loader. Existing
 Streamlit UI, CSV contract, deterministic analytics, semantic allowlists, AI
 guardrails, scenarios and audit behavior are unchanged. No agents, jobs,
-operational fact generation or new analytics are added.
+new analytics or frontend integration are added.
 
 ## Hierarchy and table responsibilities
 
@@ -223,3 +224,38 @@ See [Synthetic enterprise reference data](../data/synthetic-enterprise-data.md)
 for distribution, fixed IDs, commands, collision handling, loader permissions,
 sequence behavior and validation instructions. These commands are explicit
 operator actions, not part of Streamlit startup or background processing.
+
+
+## Phase 1C operational baseline
+
+The new operations generator reuses Phase 1B references and populates only
+employee, provider_capacity and staffing_daily. It creates 462 nameless fictional
+employees across eight approved operational roles, 109,650 provider/day capacity
+rows and 146,200 practice/day/role staffing rows. Daily coverage is 2024-01-01
+through 2025-12-31 inclusive (731 days). This dataset is independent of the legacy
+2021–2025 provider-day facts, whose generator, dates and analytics stay unchanged.
+
+MA headcount scales with provider count; larger practices have additional RNs
+and billing staff. Employees are an active fixed cohort with realistic synthetic
+FTE/cost ranges and hires after practice opening but before the window. No
+personal fields are generated. Provider profiles vary by specialty and provider;
+scheduled hours include clinical, administrative and PTO hours without overlap.
+Daily staffing derives from roster FTE, routine planned leave and unplanned
+absences. Overtime/agency replace only part of uncovered budget hours and remain
+separate from actual regular-staff FTE. Weekends are represented by zeros.
+
+Seed 42 with stable entity/date random streams makes repeated and sliced runs
+consistent. No ground-truth anomalies or persistent shortage episodes are
+injected. Routine PTO/absence variation is part of the clean baseline. There are
+no encounters, referrals, payments or new appointment events in this phase.
+
+The explicit loader checks stored reference mappings, bulk-copies into temporary
+staging tables and inserts missing keys in one transaction. Identical keys are
+reused; conflicting values abort all writes. No existing operational rows are
+overwritten. The employee sequence advances transactionally when necessary.
+Reference and target locks protect loading; no schema change or application
+startup hook is introduced. New tables are not connected to current dashboards.
+
+See the [Phase 1C operational assumptions and commands](../data/synthetic-enterprise-data.md#phase-1c-independent-operational-baseline)
+for role counts, equations, sampling assumptions, date-window options, loading
+permissions, conflict handling and validation.

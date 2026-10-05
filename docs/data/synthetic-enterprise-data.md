@@ -1,4 +1,4 @@
-# Synthetic enterprise reference data — Phase 1B
+# Synthetic enterprise data — Phases 1B–1C
 
 OpPilot AI's reference fixture is entirely fictional. NorthStar Medical Group,
 practice names and provider identities are invented for operational analytics
@@ -174,3 +174,200 @@ test URL, PostgreSQL cases explicitly skip. Full validation sets the test URL an
 exercises real inserts, mappings, idempotence, conflict rollback, sequence
 advancement and preservation of legacy operational data. Frozen pre-refactor
 provider-day hashes for two seeds guard the existing generator's output.
+
+
+## Phase 1C: independent operational baseline
+
+`src/enterprise_operations.py` reuses the Phase 1B generator as the only source
+of practices, providers and specialties. It adds only employee, provider_capacity
+and staffing_daily data. No existing reference records, provider-day CSV,
+appointment aggregates, performance, appointment events, encounters, referrals,
+payments or ground-truth anomalies are generated or changed by this phase.
+The Streamlit application does not read these new operational tables yet.
+
+The fixed window is **2024-01-01 through 2025-12-31 inclusive**, exactly 24
+calendar months and 731 days including February 29, 2024. Both daily tables
+include weekends, represented by zero-valued rows. Default counts are:
+
+| Table | Rows | Grain |
+| --- | ---: | --- |
+| employee | 462 | One fictional employee ID |
+| provider_capacity | 109,650 | 150 providers × 731 dates |
+| staffing_daily | 146,200 | 25 practices × 8 roles × 731 dates |
+
+The legacy Provider Performance dataset retains its 2021–2025 coverage and
+existing calculations. Matching dates do not imply the independent datasets
+reconcile: do not substitute new capacity/staffing into old metrics or combine
+the measures without a future explicit model integration.
+
+### Employee model
+
+All employees are represented by synthetic numeric IDs only, with no names,
+contact details, credentials or personal/clinical attributes. For provider
+headcount N at a practice, the fixed roster contains:
+
+| Operational role | Employees per practice | Synthetic hourly cost range |
+| --- | --- | --- |
+| Medical Assistant | N + 1 | $20–$29 |
+| RN | 3 for N ≥ 8; otherwise 2 | $34–$47 |
+| LPN | 1 | $25–$34 |
+| Front Desk | 3 | $18–$25 |
+| Scheduler | 2 | $20–$28 |
+| Practice Manager | 1 | $34–$48 |
+| Referral Coordinator | 1 | $23–$31 |
+| Billing Specialist | 2 for N ≥ 8; otherwise 1 | $24–$34 |
+
+Organization totals are 175 MAs, 56 RNs, 25 LPNs, 75 Front Desk staff, 50
+Schedulers, 25 Practice Managers, 25 Referral Coordinators and 31 Billing
+Specialists. Counts vary with practice size rather than being identical.
+Costs are illustrative nominal synthetic dollars, not researched market rates.
+FTE is chosen from 0.6, 0.8 and 1.0, weighted toward 1.0; managers are 1.0 FTE.
+
+This clean baseline uses a fixed cohort: all employees are active and have NULL
+termination_date. Hire dates fall on/after practice opening and before 2024.
+No turnover or dated leave episodes are modeled. Validation checks the schema's
+active/on_leave/terminated status vocabulary and date consistency, but generation
+uses active only. Individual employment histories are not reconstructed.
+
+Employee IDs follow `1000000 + practice_offset * 1000 + role_index * 100 + slot`,
+with zero-based role/slot indices. The formula gives stable, unique IDs for the
+fixed reference fixture. These are not globally reserved database IDs; a
+collision with a different existing record causes loading to fail.
+
+### Provider-capacity model
+
+Each provider has a deterministic profile: a 6.4- or 8-hour weekday template,
+a 0.75/1/1.25-hour administrative allowance, and a specialty-based slot rate.
+Approximately 15% of profiles have one regular weekday off. All weekends are
+closed. The baseline does not model holidays, time zones, shifts or seasonal
+closures. On eligible workdays, a 4% independent probability assigns routine
+full-day PTO; this is ordinary baseline variation, not labeled anomaly injection.
+
+For every provider/date:
+
+- scheduled_hours = clinical_hours + admin_hours + pto_hours.
+- scheduled_hours is the planned template, including paid PTO; maximum 8.
+- Full-day PTO consumes the template, leaving zero clinical/admin hours and slots.
+- Otherwise clinical_hours = template hours − administrative allowance.
+- Gross slots = floor(clinical_hours × specialty daily slots / 7 × provider
+  factor), using existing specialty slot assumptions and factor 0.9, 1 or 1.1.
+- Routine blocked slots are drawn from 0, 0, 0, 1, 2 and capped at gross slots.
+- available_slots = gross slots − blocked_slots. Blocked slots reserve clinical
+  template time; they are not additional hours or additional available slots.
+
+All quantities are nonnegative. A closed/off day has zero hours and slots.
+Patterns differ by provider and specialty. No appointment statuses, visits or
+revenue are inferred from these capacity rows.
+
+### Daily staffing model
+
+FTE here means an eight-hour-day equivalent, not a count of people present.
+For every practice/date/role, weekday budgeted_fte is the sum of that roster's
+contracted FTE. Each employee has a 3% daily chance of routine planned leave,
+which removes their FTE from scheduled_fte. Of those scheduled, 2% have an
+unplanned absence, removing their FTE from actual_fte. Weekends have zero budget,
+schedule, actual staffing and supplemental hours. Manager counts remain lower
+than MA and front-desk counts.
+
+The following relationships hold:
+
+- 0 ≤ actual_fte ≤ scheduled_fte ≤ budgeted_fte.
+- absence_hours = (scheduled_fte − actual_fte) × 8.
+- Coverage gap hours = (budgeted_fte − actual_fte) × 8.
+- overtime_hours replaces 0%, 25% or 50% of that gap, capped at two extra hours
+  per actual regular-staff FTE.
+- When a gap remains for MA/RN/LPN roles, an 8% conditional chance supplies agency
+  hours, capped at eight hours and at the remaining gap. Agency use is uncommon
+  across the full dataset; it is not 8% of all staffing rows.
+- overtime_hours + agency_hours never exceeds the coverage gap.
+- Actual FTE excludes overtime and agency. Effective coverage, if needed later,
+  is actual_fte + (overtime_hours + agency_hours) / 8; absence must not be deducted
+  from actual_fte again.
+
+Employee FTE sums link staffing to the roster. Provider headcounts determine MA
+staffing and larger-practice RN/billing allocations. Staffing is not yet coupled
+to realized provider clinical hours; no causal effect on capacity is asserted.
+Planned leave and absences are independent daily variation, not persistent
+shortage episodes. No root-cause or ground-truth labels are injected.
+
+### Reproducibility and development windows
+
+A fixed seed of 42 and SHA-256-derived per-entity/per-date random streams avoid
+Python's process-randomized hash and the current clock. No global random state
+is modified. Dates are inclusive. Numeric measures use at most two decimals.
+A smaller date window generates exactly the matching full-run slice; employee
+IDs and roster remain unchanged. This makes overlapping development loads safe.
+Only subwindows inside the fixed 24-month period are accepted.
+
+Export a full baseline into a **new** directory (existing directories are refused):
+
+```sh
+python scripts/generate_enterprise_operations.py --output-dir /tmp/oppilot-operations
+```
+
+The command produces employee.csv, provider_capacity.csv, staffing_daily.csv and
+a manifest with date bounds/counts. Empty CSV termination_date values mean NULL.
+If a disk error interrupts export, remove or choose another partial output
+directory before retrying; file export is not a database transaction. Generated
+files are review artifacts and need not be committed. No arbitrary CSV import
+is introduced; the loader generates and validates the baseline itself.
+
+After separately applying the existing schema and loading Phase 1B references:
+
+```sh
+python scripts/load_enterprise_operations.py
+# Small development window, same identities and day values:
+python scripts/load_enterprise_operations.py --start 2024-01-01 --end 2024-01-07
+```
+
+Both export and loading accept --start/--end. The loader uses DATABASE_URL only
+when explicitly invoked. There is no automatic loading, background job or UI hook.
+
+### Bulk loading and conflict policy
+
+`src/enterprise_operations_loader.py` validates the complete requested window,
+then verifies the stored Phase 1B practice hierarchy and provider identity,
+specialty name, clinic label and practice mapping. Stored specialty numeric IDs
+may differ, as allowed by the Phase 1B loader. Missing or conflicting references
+cause an error; they are not repaired or silently loaded here.
+
+One explicit transaction covers all three tables and the employee serial
+sequence (a savepoint inside an existing transaction). Temporary staging uses
+PostgreSQL COPY, followed by set-based row comparison and INSERT SELECT. There
+are no per-record INSERT round trips, DELETEs, TRUNCATEs or unconditional updates.
+All matching existing keys must have identical values; differing values abort
+the entire load. Identical reruns insert zero rows, and overlapping subwindows
+insert only missing dates. Unrelated keys and out-of-window rows are preserved.
+
+Reference tables receive SHARE locks to prevent concurrent remapping. The three
+operational targets receive SHARE ROW EXCLUSIVE locks, allowing ordinary reads
+while serializing writes. Temporary staging tables are dropped after use.
+Sequence advancement uses transactional ALTER SEQUENCE RESTART only when needed
+and never rewinds; it protects subsequent default employee IDs. Failures roll
+back earlier table inserts and sequence changes together. An outer caller can
+still roll back a successful load.
+
+A loading role needs reference reads/locking privileges, target write/locking
+privileges, database TEMP permission and employee-sequence ownership or appropriate
+privileges. Normal ascending Phase 1A sequences are assumed. Avoid direct external
+nextval reservations and concurrent migrations during loading. Table locks may
+block other writers; use a development database or maintenance window. No
+application database is loaded as part of code validation.
+
+### Phase 1C validation
+
+Tests cover full counts and date coverage, leap day, keys and relationships,
+role catalogs, employee dates, balanced capacity hours, nonnegative finite
+measures, staffing reconciliation, rare agency use, deterministic full and sliced
+runs, strict field allowlists, invalid inputs, full-size PostgreSQL COPY loading,
+idempotence, overlapping windows, reference conflicts, data/sequence rollback and
+preservation of legacy facts. No existing tests are weakened.
+
+```sh
+OPPILOT_TEST_DATABASE_URL=postgresql://localhost/oppilot_test python -m pytest -q tests/test_enterprise_operations.py
+OPPILOT_TEST_DATABASE_URL=postgresql://localhost/oppilot_test python -m pytest -q
+```
+
+As in previous phases, PostgreSQL tests require a disposable test database and
+otherwise explicitly skip. The existing synthetic-only/no-PHI policy applies;
+no personal or patient fields are present in these three exports.

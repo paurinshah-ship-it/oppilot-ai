@@ -501,3 +501,15 @@ introduced.
 See [Synthetic anomaly framework](anomaly-framework.md) for the anomaly catalog,
 portfolio profile, severity model, loading behavior and ground-truth evaluation
 boundaries.
+
+## Phase 1G deterministic tools
+
+Phase 1G adds deterministic enterprise analytics tools for future agents. The
+tools compile structured requests into allowlisted, parameterized PostgreSQL
+queries and return evidence objects with metric definitions, periods, scopes,
+units and numerator/denominator details where useful. They do not calculate
+metrics in an LLM and do not expose `ground_truth_anomaly`.
+
+See [Deterministic enterprise tool layer](../architecture/agent-tool-layer.md)
+for the metric catalog, supported dimensions, SQL safety model and ground-truth
+firewall.

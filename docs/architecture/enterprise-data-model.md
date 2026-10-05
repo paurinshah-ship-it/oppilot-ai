@@ -204,6 +204,17 @@ Supported anomaly types are `MA_STAFFING_SHORTAGE`,
 `REVENUE_PER_VISIT_DECLINE`. The existing direction catalog stays
 `increase`/`decrease`, and severity stays `low`/`medium`/`high`.
 
+## Phase 1G deterministic tool layer
+
+Phase 1G adds a future agent-facing deterministic tool layer over enterprise
+facts. It uses typed request objects, allowlisted metric and dimension catalogs,
+parameterized SQL and structured evidence results. It does not add an LLM,
+agent, orchestrator, background monitor or root-cause engine.
+
+The tool layer explicitly blocks `ground_truth_anomaly`; ground truth remains
+evaluation-only and is not an inference input. See
+[Deterministic enterprise tool layer](agent-tool-layer.md).
+
 ## Why appointments and encounters are separate
 
 `appointment` is a daily aggregate, not a scheduling event. `appointment_event`

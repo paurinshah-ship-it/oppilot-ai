@@ -482,3 +482,22 @@ The finance loader requires matching Phase 1D appointment events to exist first.
 Both Phase 1E loaders use temporary staging tables, set-based conflict checks,
 insert-only semantics and transactions. Identical reruns insert zero rows;
 conflicting existing rows abort without overwriting stored values.
+
+## Phase 1F anomaly framework
+
+Phase 1F keeps clean baseline generation available and adds opt-in deterministic
+anomaly injection. The `portfolio_demo` profile creates 10 known operational
+problems across staffing, provider capacity, no-shows, referral demand,
+scheduling templates and financial outcomes. Each injected issue has a matching
+`ground_truth_anomaly` row with stable ID, practice, date range, anomaly type,
+affected metric, expected direction, severity and description.
+
+The framework validates internal consistency after injection. No-show spikes
+remove completed encounters and payments for converted appointment events.
+Capacity, staffing and financial values are bounded at zero. Referral surges add
+synthetic operational demand only; no patient or referring-physician fields are
+introduced.
+
+See [Synthetic anomaly framework](anomaly-framework.md) for the anomaly catalog,
+portfolio profile, severity model, loading behavior and ground-truth evaluation
+boundaries.

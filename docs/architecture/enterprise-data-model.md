@@ -32,7 +32,7 @@ use BIGSERIAL; existing provider IDs remain TEXT, including `SYN-001`.
 | `encounter` | Synthetic service record generated only from completed appointment events, with provider/practice, date, visit type, RVUs, modeled charge and allowed amount. |
 | `referral` | Synthetic practice/specialty referral demand with referral/scheduled dates, source category and status. |
 | `payment` | Synthetic payment component record for an encounter/date/payer category; Phase 1E generates one payment per encounter. |
-| `ground_truth_anomaly` | Future generator-injected anomaly labels: practice, interval, type, metric, direction, severity and synthetic explanation. |
+| `ground_truth_anomaly` | Deterministic anomaly labels for evaluation: practice, interval, type, metric, direction, severity and synthetic explanation. |
 
 ## Existing Provider Performance tables
 
@@ -189,6 +189,20 @@ are generic synthetic categories: `internal`, `external_primary_care`,
 not add a direct `referral_id` foreign key to `appointment_event`; conversion
 analysis uses referral status and scheduled date, and explicit linkage can be
 added later without changing existing appointment rows.
+
+## Phase 1F anomaly ground truth
+
+Phase 1F adds an opt-in anomaly framework. Clean Phase 1B-1E baseline generation
+remains unchanged. The `portfolio_demo` profile deterministically transforms a
+copy of the baseline dataset and emits matching `ground_truth_anomaly` rows.
+Ground truth records are for evaluation only and should not be exposed to future
+investigation agents during inference.
+
+Supported anomaly types are `MA_STAFFING_SHORTAGE`,
+`PROVIDER_PTO_CAPACITY_REDUCTION`, `NO_SHOW_SPIKE`,
+`REFERRAL_DEMAND_SURGE`, `SCHEDULING_TEMPLATE_CAPACITY_REDUCTION`, and
+`REVENUE_PER_VISIT_DECLINE`. The existing direction catalog stays
+`increase`/`decrease`, and severity stays `low`/`medium`/`high`.
 
 ## Why appointments and encounters are separate
 

@@ -200,7 +200,8 @@ def test_boundary_dates_and_valid_categories(populated):
     db.execute("UPDATE employee SET termination_date = hire_date, status = 'terminated'")
     db.execute("UPDATE employee SET termination_date = NULL, status = 'on_leave'")
     db.execute("UPDATE referral SET scheduled_date = referral_date")
-    for status in ('pending', 'scheduled', 'completed', 'cancelled', 'declined'):
+    for status in ('received', 'scheduled', 'completed', 'expired', 'lost',
+                   'pending', 'cancelled', 'declined'):
         db.execute('UPDATE referral SET status = %s', (status,))
     db.execute('UPDATE ground_truth_anomaly SET end_date = start_date')
     for severity in ('low', 'medium', 'high'):

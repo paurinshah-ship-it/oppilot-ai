@@ -1,6 +1,8 @@
-# Provider Performance Copilot roadmap
+# OpPilot AI Roadmap
 
-Build in releases. Keep Python/Pandas responsible for calculations and date resolution; the conversational layer selects supported analyses and explains calculated results. Preserve the current dashboard, selected-team filters, local voice processing, and safety restrictions.
+**Autonomous Healthcare Operations Intelligence**
+
+Build OpPilot AI in releases, preserving Provider Performance as a core capability. Keep Python/Pandas responsible for calculations and date resolution; the conversational layer selects supported analyses and explains calculated results. Preserve the current dashboard, selected-team filters, local voice processing, and safety restrictions.
 
 ## Current baseline
 

@@ -24,7 +24,7 @@ import hashlib
 import html
 from ai_copilot import build_context, context_key, configuration_ready, generate_brief, CopilotError
 
-st.set_page_config(page_title="Provider Performance Copilot", page_icon="📊", layout="wide")
+st.set_page_config(page_title="OpPilot AI", page_icon="📊", layout="wide")
 
 apply_style()
 

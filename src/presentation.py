@@ -169,7 +169,7 @@ def apply_style():
 def header():
     st.markdown("""
     <div class="executive-header">
-      <div><div class="eyebrow">HEALTHCARE OPERATIONS INTELLIGENCE</div><h1>Provider Performance Copilot</h1></div>
+      <div><div class="eyebrow">Autonomous Healthcare Operations Intelligence</div><h1>OpPilot AI</h1></div>
       <p>Executive operations workspace<br>Performance, capacity, and opportunity</p>
     </div>
     """, unsafe_allow_html=True)

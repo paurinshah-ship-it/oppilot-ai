@@ -1,8 +1,10 @@
-# Provider Performance Copilot
+# OpPilot AI
 
-An AI-powered operational decision-support application for ambulatory healthcare organizations.
+**Autonomous Healthcare Operations Intelligence**
 
-Provider Performance Copilot helps practice managers and healthcare leaders identify unused capacity, analyze provider performance, estimate revenue opportunities, compare operational trends, and investigate performance questions through a conversational Copilot.
+An AI-powered operational decision-support application for ambulatory healthcare organizations, with Provider Performance analysis at its core.
+
+OpPilot AI helps practice managers and healthcare leaders identify unused capacity, analyze provider performance, estimate revenue opportunities, compare operational trends, and investigate performance questions through a conversational Copilot.
 
 > **Live Demo:** https://paurinshah-ship-it-provider-performance-copilot-app-ebiivb.streamlit.app/
 

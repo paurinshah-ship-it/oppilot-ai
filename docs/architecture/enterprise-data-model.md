@@ -1,4 +1,4 @@
-# OpPilot AI enterprise data model — Phases 1A–1D
+# OpPilot AI enterprise data model — Phases 1A–1E
 
 **Autonomous Healthcare Operations Intelligence**
 
@@ -9,7 +9,9 @@ Streamlit UI, CSV contract, deterministic analytics, semantic allowlists, AI
 guardrails, scenarios and audit behavior are unchanged. No agents, jobs,
 new analytics or frontend integration are added. Phase 1D adds a synthetic,
 event-grain scheduling fixture and a bulk loader; it does not change dashboard
-queries or existing Provider Performance calculations.
+queries or existing Provider Performance calculations. Phase 1E adds synthetic
+encounters, payments and referrals outside the Provider Performance dashboard
+path.
 
 ## Hierarchy and table responsibilities
 
@@ -27,9 +29,9 @@ use BIGSERIAL; existing provider IDs remain TEXT, including `SYN-001`.
 | `employee` | Fictional employee ID, practice, role, FTE, cost and employment dates/status; no personal identity fields. |
 | `provider_capacity` | Provider/day scheduled and clinical hours, available/blocked slots, PTO and administrative hours. |
 | `staffing_daily` | Practice/day/role budgeted, scheduled and actual FTE, overtime, agency and absence hours. |
-| `encounter` | Synthetic service record with provider/practice, date, visit type, RVUs, modeled charge and allowed amount. Optional unique appointment-event link permits walk-ins. |
-| `referral` | Synthetic practice/specialty referral with referral/scheduled dates, source category and status. |
-| `payment` | Synthetic payment component record for an encounter/date/payer category; multiple payments per encounter allowed. |
+| `encounter` | Synthetic service record generated only from completed appointment events, with provider/practice, date, visit type, RVUs, modeled charge and allowed amount. |
+| `referral` | Synthetic practice/specialty referral demand with referral/scheduled dates, source category and status. |
+| `payment` | Synthetic payment component record for an encounter/date/payer category; Phase 1E generates one payment per encounter. |
 | `ground_truth_anomaly` | Future generator-injected anomaly labels: practice, interval, type, metric, direction, severity and synthetic explanation. |
 
 ## Existing Provider Performance tables
@@ -151,6 +153,42 @@ temporary staging table, validates reference/provider-practice integrity,
 rejects conflicting existing IDs, and inserts missing rows in one transaction.
 Matching reruns are idempotent. It touches only `appointment_event`; encounter,
 payment, referral and anomaly generation are not part of this phase.
+
+## Phase 1E encounters, payments and referrals
+
+Encounters are derived only from completed appointment events. Each generated
+encounter maps to exactly one appointment event; provider, practice and date
+match that appointment, and the appointment-to-encounter relationship is unique.
+Generated visit types use the operational appointment type catalog:
+`new_patient`, `follow_up`, `annual`, `procedure`, `consult`, `urgent` and
+`telehealth`. No diagnoses, CPT codes, medications, notes, patient identifiers
+or other clinical content are generated.
+
+Financial concepts remain distinct:
+
+```text
+appointment_event.modeled_revenue = legacy compatibility estimate
+encounter.modeled_charge          = synthetic gross charge
+encounter.allowed_amount          = synthetic allowable amount
+payment.paid_amount               = synthetic paid amount
+```
+
+None of these fields is profit, and `modeled_revenue` is not collections. Phase
+1E uses one payment per encounter. `payment.allowed_amount` matches the
+encounter allowed amount; `paid_amount`, `patient_amount` and
+`adjustment_amount` are nonnegative synthetic components. Payment dates are on
+or after encounter dates and may extend beyond December 31, 2025 because
+synthetic payer lags can be as long as 90 days.
+
+Referrals model operational demand separately from appointments. Generated
+statuses are `received`, `scheduled`, `completed`, `expired` and `lost`.
+`scheduled` and `completed` referrals require `scheduled_date`; `expired` and
+`lost` remain visible for future access and leakage analysis. Referral sources
+are generic synthetic categories: `internal`, `external_primary_care`,
+`specialist`, `self_referred`, `hospital_discharge` and `other`. Phase 1E does
+not add a direct `referral_id` foreign key to `appointment_event`; conversion
+analysis uses referral status and scheduled date, and explicit linkage can be
+added later without changing existing appointment rows.
 
 ## Why appointments and encounters are separate
 

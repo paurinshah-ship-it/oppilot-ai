@@ -439,3 +439,46 @@ insert zero rows; an existing event ID with different generated values aborts
 the transaction. It preserves legacy event rows and does not touch provider-day
 facts or other operational tables. Table locks serialize competing writes, so
 large loads belong in a development database or a planned maintenance window.
+
+## Phase 1E encounters, payments and referrals
+
+Encounter and payment generation streams from the Phase 1D appointment-event
+generator. Encounters are emitted only for `completed` appointment events, with
+one encounter per completed appointment. Provider, practice, date and visit type
+come from the appointment event. The default one-million appointment stream
+therefore produces roughly the completed-event share as encounters and one
+payment for each encounter; smaller deterministic counts are supported for
+development and tests.
+
+Financial fields are intentionally separate. `appointment_event.modeled_revenue`
+is the legacy operational compatibility estimate. `encounter.modeled_charge` is
+a synthetic gross charge. `encounter.allowed_amount` is a synthetic allowable
+amount that does not exceed the modeled charge. `payment.paid_amount` is a
+synthetic paid amount. None is profit, and modeled revenue is not treated as
+collections. Phase 1E uses one payment per encounter; partial payments and
+line-level variations are left for a later additive model.
+
+Payment lags are synthetic and payer-category based: Commercial and Medicare
+use moderate delays, Medicaid somewhat longer delays, and Self Pay/Other more
+variable delays. Payment dates are never before the encounter date and can
+spill beyond the 2024-2025 appointment window by up to 90 days.
+
+Referral generation is independent operational demand by practice and specialty,
+not a direct appointment foreign key. Statuses are `received`, `scheduled`,
+`completed`, `expired` and `lost`. Scheduled and completed referrals include a
+scheduled date on or after the referral date; lost and expired referrals remain
+available for future access and leakage analysis. Sources are generic synthetic
+categories: `internal`, `external_primary_care`, `specialist`, `self_referred`,
+`hospital_discharge` and `other`.
+
+```sh
+python scripts/generate_enterprise_finance.py --output-dir /tmp/enterprise-finance --count 10000
+python scripts/load_enterprise_finance.py --count 10000
+python scripts/generate_enterprise_referrals.py --output /tmp/enterprise-referrals.csv --count 5000
+python scripts/load_enterprise_referrals.py --count 5000
+```
+
+The finance loader requires matching Phase 1D appointment events to exist first.
+Both Phase 1E loaders use temporary staging tables, set-based conflict checks,
+insert-only semantics and transactions. Identical reruns insert zero rows;
+conflicting existing rows abort without overwriting stored values.

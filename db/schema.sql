@@ -201,10 +201,25 @@ CREATE TABLE IF NOT EXISTS referral (
     referral_date DATE NOT NULL,
     scheduled_date DATE,
     referral_source TEXT NOT NULL CHECK (btrim(referral_source) <> ''),
-    status TEXT NOT NULL CHECK (status IN ('pending', 'scheduled', 'completed', 'cancelled', 'declined')),
+    status TEXT NOT NULL CHECK (status IN ('received', 'scheduled', 'completed', 'expired', 'lost',
+                                           'pending', 'cancelled', 'declined')),
     CHECK (scheduled_date IS NULL OR scheduled_date >= referral_date),
     CHECK (status NOT IN ('scheduled', 'completed') OR scheduled_date IS NOT NULL)
 );
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'referral'::regclass
+          AND conname = 'referral_status_check'
+          AND pg_get_constraintdef(oid) LIKE '%received%'
+    ) THEN
+        ALTER TABLE referral DROP CONSTRAINT IF EXISTS referral_status_check;
+        ALTER TABLE referral ADD CONSTRAINT referral_status_check
+            CHECK (status IN ('received', 'scheduled', 'completed', 'expired', 'lost',
+                              'pending', 'cancelled', 'declined'));
+    END IF;
+END $$;
 
 -- Nonnegative synthetic payment components, not a signed refund ledger.
 CREATE TABLE IF NOT EXISTS payment (
@@ -240,4 +255,5 @@ CREATE INDEX IF NOT EXISTS encounter_provider_date_idx ON encounter (provider_id
 CREATE INDEX IF NOT EXISTS referral_practice_date_idx ON referral (practice_id, referral_date);
 CREATE INDEX IF NOT EXISTS referral_specialty_idx ON referral (specialty_id);
 CREATE INDEX IF NOT EXISTS payment_encounter_date_idx ON payment (encounter_id, payment_date);
+CREATE UNIQUE INDEX IF NOT EXISTS payment_encounter_unique_idx ON payment (encounter_id);
 CREATE INDEX IF NOT EXISTS anomaly_practice_date_idx ON ground_truth_anomaly (practice_id, start_date, end_date);

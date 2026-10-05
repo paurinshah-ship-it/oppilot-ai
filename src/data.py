@@ -32,6 +32,17 @@ LAST_NAMES = ["Patel", "Chen", "Rivera", "Brooks", "Shah", "Bennett", "Morgan", 
 PROVIDER_NAMES = [f"Dr. {first} {last}" for first, last in zip(FIRST_NAMES, LAST_NAMES)]
 
 
+CLINIC_NAMES = ("North Clinic", "Central Clinic", "South Clinic", "East Clinic", "West Clinic", "Lakeside Clinic")
+
+
+def legacy_provider_records() -> list[dict]:
+    """Single source for the original 48 fictional provider identities."""
+    return [dict(provider_id=f"SYN-{i+1:03d}", provider_name=name,
+                 specialty_name=SPECIALTIES[i % len(SPECIALTIES)][0],
+                 clinic_name=CLINIC_NAMES[i % len(CLINIC_NAMES)])
+            for i, name in enumerate(PROVIDER_NAMES)]
+
+
 def generate_data(seed: int = 42, start: str = "2021-01-01", days: int = 1826) -> pd.DataFrame:
     """Five complete calendar years by default: Jan 2021–Dec 2025.
 
@@ -51,7 +62,7 @@ def generate_data(seed: int = 42, start: str = "2021-01-01", days: int = 1826) -
     rng = random.Random(seed)
     rows = []
     dates = pd.bdate_range(start, end)
-    for i, name in enumerate(PROVIDER_NAMES):
+    for i, provider in enumerate(legacy_provider_records()):
         specialty, rate, daily_slots = SPECIALTIES[i % len(SPECIALTIES)]
         fill = rng.uniform(.65, .92)
         trend = rng.uniform(-.025, .025)
@@ -66,9 +77,9 @@ def generate_data(seed: int = 42, start: str = "2021-01-01", days: int = 1826) -
             booked = min(capacity, max(0, round(capacity * (fill + trend * elapsed + seasonal + rng.uniform(-.10, .10)))))
             no_shows = sum(rng.random() < no_show_rate for _ in range(booked))
             visits = booked - no_shows
-            rows.append({"date": date.date().isoformat(), "provider_id": f"SYN-{i+1:03d}",
-                         "provider": name, "specialty": specialty,
-                         "clinic": ["North Clinic", "Central Clinic", "South Clinic", "East Clinic", "West Clinic", "Lakeside Clinic"][i % 6],
+            rows.append({"date": date.date().isoformat(), "provider_id": provider["provider_id"],
+                         "provider": provider["provider_name"], "specialty": specialty,
+                         "clinic": provider["clinic_name"],
                          "fte": fte, "staffed_hours": 8 * fte, "capacity": capacity,
                          "booked": booked, "no_shows": no_shows, "visits": visits,
                          "revenue": round(visits * rate * (1.025 ** elapsed) * rng.uniform(.92, 1.08), 2)})

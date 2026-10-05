@@ -1,11 +1,12 @@
-# OpPilot AI enterprise data model — Phase 1A
+# OpPilot AI enterprise data model — Phases 1A–1B
 
 **Autonomous Healthcare Operations Intelligence**
 
-An empty PostgreSQL foundation for future operational capabilities. Existing
+Phase 1A established the PostgreSQL foundation. Phase 1B adds deterministic
+synthetic reference generation and an explicit transactional loader. Existing
 Streamlit UI, CSV contract, deterministic analytics, semantic allowlists, AI
-guardrails, scenarios and audit behavior are unchanged. This phase adds no
-agents, jobs, enterprise generator or new analytics.
+guardrails, scenarios and audit behavior are unchanged. No agents, jobs,
+operational fact generation or new analytics are added.
 
 ## Hierarchy and table responsibilities
 
@@ -186,3 +187,39 @@ column/table checks run while PostgreSQL cases explicitly skip. Full validation
 requires setting the test URL to exercise real constraint rejection, legacy
 upgrade, repeatability, indexes, foreign keys, dates and statuses. Existing
 psycopg is sufficient; no new production dependency is required.
+
+
+## Phase 1B synthetic reference fixture
+
+The entirely fictional **NorthStar Medical Group** has five regions and five
+practices per region (25 total): Northeast (R01), Mid-Atlantic (R02), Southeast
+(R03), Midwest (R04), Southwest (R05). Practices use real U.S. city/state geography
+with invented names and no real organization affiliations. Region and practice
+IDs are explicit stable integers starting at 10001; practice codes are P01–P25.
+
+Exactly 150 fictional providers are generated. The shared legacy identity helper
+in `src/data.py` preserves SYN-001–SYN-048 and their names, specialties and exact
+clinic labels. North, Central, South, East, West and Lakeside Clinic map explicitly
+to P01, P06, P11, P07, P21 and P16 respectively. Each label is also that practice's
+name. New SYN-049–SYN-150 providers use their practice name as clinic_name.
+Seed 42 controls fictional name selection and opening dates; no clock or database
+state affects generated output. All practices receive providers, with specialty
+assignments aligned to practice type.
+
+The original catalog has 12 specialties. All are retained for compatibility;
+new providers use ten of them. Exported specialty IDs follow alphabetical order,
+while loading resolves existing specialty IDs by name and preserves those IDs.
+Conflicting hierarchy/provider identities abort the transaction. Matching legacy
+providers may have their NULL practice_id filled; no other provider values are
+overwritten. Schema nullability itself remains unchanged.
+
+The reference loader inserts only organization, region, practice, specialty and
+provider records, advances their serial sequences transactionally when necessary,
+and never writes operational tables. No newly generated reference provider is
+presented as having measured performance. Existing dashboard joins, clinic
+filters, provider-day CSV and appointment-event behavior remain unchanged.
+
+See [Synthetic enterprise reference data](../data/synthetic-enterprise-data.md)
+for distribution, fixed IDs, commands, collision handling, loader permissions,
+sequence behavior and validation instructions. These commands are explicit
+operator actions, not part of Streamlit startup or background processing.
